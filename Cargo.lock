@@ -3,15 +3,9 @@
 version = 4
 
 [[package]]
-name = "file_ref"
-version = "0.1.2"
-source = "git+https://github.com/SuccessfullyFailed/file_ref#f878a277e98390e0e078c484d70a74b4563178e3"
-
-[[package]]
 name = "process_memory_manipulator"
 version = "0.1.0"
 dependencies = [
- "file_ref",
  "winapi",
 ]
 
