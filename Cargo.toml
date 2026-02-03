@@ -1,0 +1,10 @@
+[package]
+name="process_memory_manipulator"
+version="0.1.0"
+edition="2024"
+
+[dependencies]
+winapi={ version="0.3.9", features=["winuser", "handleapi", "memoryapi", "errhandlingapi", "psapi", "tlhelp32", "wow64apiset", "winbase", "minwindef", "winnt", "libloaderapi", "heapapi", "debugapi", "synchapi"] }
+
+[build-dependencies]
+file_ref={ git="https://github.com/SuccessfullyFailed/file_ref" }
