@@ -1,6 +1,6 @@
-use winapi::{ ctypes::c_void, um::{ errhandlingapi::GetLastError, winnt::HANDLE as WinHandle, memoryapi::{ ReadProcessMemory, WriteProcessMemory } } };
-use crate::{ MemoryAccessToken, MemoryDataType, ProcessHandle, ProcessIdentifier };
-use std::{ error::Error, fmt::{ Debug, LowerHex }, ops::Add, ptr };
+use winapi::{ ctypes::c_void, um::{ winnt::HANDLE as WinHandle } };
+use std::{ error::Error, ops::Add, fmt::{ Debug, LowerHex } };
+use crate::{ MemoryAccessToken, ProcessHandle };
 
 
 
@@ -10,7 +10,7 @@ pub type ProcessMemoryManipulator32 = ProcessMemoryManipulator<u32>;
 
 
 pub struct ProcessMemoryManipulator<AddressType:AddressSourceType> {
-	process_identifier:Box<dyn ProcessIdentifier>,
+	process_name:String,
 	process_handle:Option<ProcessHandle>,
 	big_endian:bool,
 
@@ -21,9 +21,9 @@ impl<AddressType:AddressSourceType> ProcessMemoryManipulator<AddressType> {
 	/* CONSTRUCTOR METHODS */
 
 	/// Create a new process memory manipulator.
-	pub fn new<T:ProcessIdentifier + 'static>(process_identifier:T, big_endian:bool) -> ProcessMemoryManipulator<AddressType> {
+	pub fn new(process_name:&str, big_endian:bool) -> ProcessMemoryManipulator<AddressType> {
 		ProcessMemoryManipulator {
-			process_identifier: Box::new(process_identifier),
+			process_name: process_name.to_string(),
 			process_handle: None,
 			big_endian,
 
@@ -33,10 +33,24 @@ impl<AddressType:AddressSourceType> ProcessMemoryManipulator<AddressType> {
 
 
 
+	/* PROPERTY GETTER METHODS */
+
+	/// Get the process name of the manipulator.
+	pub fn process_name(&self) -> &str {
+		&self.process_name
+	}
+
+	/// Wether or not this manipulator is big endian.
+	pub fn big_endian(&self) -> bool {
+		self.big_endian
+	}
+
+
+
 	/* HANDLE METHODS */
 
 	/// Get the attached windows handle. Will create a new handle if the current one does not meet access criteria.
-	fn win_handle(&mut self, required_access:MemoryAccessToken) -> Result<WinHandle, Box<dyn Error>> {
+	pub(crate) fn win_handle(&mut self, required_access:MemoryAccessToken) -> Result<WinHandle, Box<dyn Error>> {
 		Ok(self.handle(required_access)?.handle)
 	}
 
@@ -50,7 +64,7 @@ impl<AddressType:AddressSourceType> ProcessMemoryManipulator<AddressType> {
 	pub fn open_handle(&mut self, access_token:MemoryAccessToken) -> Result<(), Box<dyn Error>> {
 		let current_access:MemoryAccessToken = self.process_handle.as_ref().map(|handle| handle.access).unwrap_or_default();
 		if self.process_handle.is_none() || current_access & access_token != access_token {
-			self.process_handle = Some(ProcessHandle::new(&*self.process_identifier, current_access | access_token)?);
+			self.process_handle = Some(ProcessHandle::new(&*self.process_name, current_access | access_token)?);
 		}
 		Ok(())
 	}
@@ -59,64 +73,6 @@ impl<AddressType:AddressSourceType> ProcessMemoryManipulator<AddressType> {
 	pub fn close_handle(&mut self) {
 		self.process_handle = None;
 	}
-
-
-
-	/* MEMORY READ AND WRITE METHODS */
-
-	/// Read an array of bytes from memory.
-	pub fn read_bytes<AddressReference:MemoryAddressReference<AddressType>>(&mut self, address_reference:AddressReference, amount_of_bytes:usize) -> Result<Vec<u8>, Box<dyn Error>> {		
-		const READ_ACCESS:MemoryAccessToken = MemoryAccessToken(MemoryAccessToken::READ_CONTROL.0 | MemoryAccessToken::PROCESS_VM_READ.0);
-
-		// Create pointer to buffer to write to.
-		let mut buffer:Vec<u8> = vec![0; amount_of_bytes];
-		let inner_buffer:&mut [u8] = &mut buffer[..];
-		let buffer_ptr:*mut c_void = inner_buffer.as_mut_ptr() as *mut c_void;
-		let mut bytes_read:usize = 0;
-
-		// Read the memory.
-		let address:AddressType = address_reference.to_raw_address(self)?;
-		let exit_status:i32 = unsafe { ReadProcessMemory(self.win_handle(READ_ACCESS)?, address.to_c_void_ptr(), buffer_ptr, amount_of_bytes, &mut bytes_read) };
-		if exit_status == 0 {
-			return Err(format!("Memory Read on address {:#08x} failed with error code {}.", address, unsafe { GetLastError() }).into());
-		}
-
-		// Create and return value.
-		Ok(buffer)
-	}
-
-	/// Read a value from memory.
-	pub fn read<DataType:MemoryDataType, AddressReference:MemoryAddressReference<AddressType>>(&mut self, address_reference:AddressReference) -> Result<DataType, Box<dyn Error>> {
-		let address:AddressType = address_reference.to_raw_address(self)?;
-		let read_bytes:Vec<u8> = self.read_bytes(address, DataType::BYTES_SIZE)?;
-		Ok(
-			if self.big_endian {
-				DataType::mdt_from_be_bytes(read_bytes)
-			} else {
-				DataType::mdt_from_le_bytes(read_bytes)
-			}
-		)
-	}
-
-	/// Write an array of bytes to memory.
-	pub fn write_bytes(&mut self, address:AddressType, bytes:&[u8]) -> Result<(), Box<dyn Error>> {
-		const WRITE_ACCESS:MemoryAccessToken = MemoryAccessToken(MemoryAccessToken::PROCESS_QUERY_INFORMATION.0 | MemoryAccessToken::PROCESS_VM_WRITE.0 | MemoryAccessToken::PROCESS_VM_OPERATION.0);
-
-		// Write the memory.
-		let exit_status:i32 = unsafe { WriteProcessMemory(self.win_handle(WRITE_ACCESS)?, address.to_c_void_ptr_mut(), bytes.as_ptr() as *const c_void, bytes.len(), ptr::null_mut()) };
-		if exit_status == 0 {
-			return Err(format!("Memory Write on address {:#02x} failed with error code {}.", address, unsafe { GetLastError() }).into());
-		}
-
-		// Return success.
-		Ok(())
-	}
-
-	/// Write a value to memory.
-	pub fn write<DataType:MemoryDataType>(&mut self, address:AddressType, value:DataType) -> Result<(), Box<dyn Error>> {
-		let value_as_bytes:Vec<u8> = if self.big_endian { value.mdt_to_be_bytes() } else { value.mdt_to_le_bytes() };
-		self.write_bytes(address, &value_as_bytes)
-	}
 }
 
 
@@ -124,6 +80,7 @@ impl<AddressType:AddressSourceType> ProcessMemoryManipulator<AddressType> {
 pub trait AddressSourceType:Debug + Default + LowerHex + Clone + PartialEq + Add<Output=Self> {
 	fn to_c_void_ptr(&self) -> *const c_void;
 	fn to_c_void_ptr_mut(&self) -> *mut c_void;
+	fn from_c_void_mut(address:u64) -> Self;
 }
 impl AddressSourceType for u64 {
 	fn to_c_void_ptr(&self) -> *const c_void {
@@ -131,6 +88,9 @@ impl AddressSourceType for u64 {
 	}
 	fn to_c_void_ptr_mut(&self) -> *mut c_void {
 		*self as *mut c_void
+	}
+	fn from_c_void_mut(address:u64) -> Self {
+		address
 	}
 }
 impl AddressSourceType for u32 {
@@ -140,38 +100,7 @@ impl AddressSourceType for u32 {
 	fn to_c_void_ptr_mut(&self) -> *mut c_void {
 		*self as *mut c_void
 	}
-}
-
-
-
-pub trait MemoryAddressReference<AddressType:AddressSourceType> {
-	fn to_raw_address(&self, pmm:&mut ProcessMemoryManipulator<AddressType>) -> Result<AddressType, Box<dyn Error>>;
-}
-impl<AddressType:AddressSourceType + Clone> MemoryAddressReference<AddressType> for AddressType {
-	fn to_raw_address(&self, _pmm:&mut ProcessMemoryManipulator<AddressType>) -> Result<AddressType, Box<dyn Error>> {
-		Ok(self.clone())
-	}
-}
-impl<AddressType:AddressSourceType + MemoryDataType> MemoryAddressReference<AddressType> for Vec<AddressType> {
-	fn to_raw_address(&self, pmm:&mut ProcessMemoryManipulator<AddressType>) -> Result<AddressType, Box<dyn Error>> {
-		self[..].to_raw_address(pmm)
-	}
-}
-impl<AddressType:AddressSourceType + MemoryDataType, const ARRAY_SIZE:usize> MemoryAddressReference<AddressType> for [AddressType; ARRAY_SIZE] {
-	fn to_raw_address(&self, pmm:&mut ProcessMemoryManipulator<AddressType>) -> Result<AddressType, Box<dyn Error>> {
-		self[..].to_raw_address(pmm)
-	}
-}
-impl<AddressType:AddressSourceType + MemoryDataType> MemoryAddressReference<AddressType> for [AddressType] {
-	fn to_raw_address(&self, pmm:&mut ProcessMemoryManipulator<AddressType>) -> Result<AddressType, Box<dyn Error>> {
-		if self.is_empty() {
-			return Err("Could not get memory address from empty list. At least one address is required.".into());
-		}
-		let mut address:AddressType = self[0].clone();
-		for offset in &self[1..] {
-			address = pmm.read(address)?;
-			address = address + offset.clone();
-		}
-		Ok(address)
+	fn from_c_void_mut(address:u64) -> Self {
+		address as u32
 	}
 }

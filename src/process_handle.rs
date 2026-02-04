@@ -13,7 +13,7 @@ impl ProcessHandle {
 	/* CONSTRUCTOR METHODS */
 
 	/// Create a new process handle.
-	pub fn new<T:ProcessIdentifier>(process_identifier:T, access_token:MemoryAccessToken) -> Result<ProcessHandle, Box<dyn Error>> {
+	pub fn new(process_name:&str, access_token:MemoryAccessToken) -> Result<ProcessHandle, Box<dyn Error>> {
 		unsafe {
 
 			// Create a snapshot of the current processes list.
@@ -31,7 +31,11 @@ impl ProcessHandle {
 				return Err("Could not find first process in process list snapshot.".into());
 			}
 			loop {
-				if process_identifier.matches_entry(&entry) {
+
+				// Check if entry process name matches given name.
+				let name_bytes:&[u8] = CStr::from_ptr(entry.szExeFile.as_ptr()).to_bytes();
+				let process_name_matches_entry:bool = str::from_utf8(name_bytes).is_ok_and(|name| name == process_name);
+				if process_name_matches_entry {
 
 					// Open a handle to the newly found PID.
 					let pid:u32 = entry.th32ProcessID;
@@ -50,48 +54,12 @@ impl ProcessHandle {
 				}
 			}
 
-			Err(format!("Could not find process '{}'.", process_identifier.name()).into())
+			Err(format!("Could not find process '{process_name}'.").into())
 		}
 	}
 }
 impl Drop for ProcessHandle {
 	fn drop(&mut self) {
 		unsafe { CloseHandle(self.handle); }
-	}
-}
-
-
-
-pub trait ProcessIdentifier {
-	fn name(&self) -> String;
-	fn matches_entry(&self, entry:&PROCESSENTRY32) -> bool;
-}
-impl ProcessIdentifier for &dyn ProcessIdentifier {
-	fn name(&self) -> String {
-		(*self).name()
-	}
-	fn matches_entry(&self, entry:&PROCESSENTRY32) -> bool {
-		(*self).matches_entry(entry)
-	}
-}
-impl ProcessIdentifier for u32 {
-	fn name(&self) -> String {
-		self.to_string()
-	}
-	fn matches_entry(&self, entry:&PROCESSENTRY32) -> bool {
-		entry.th32ProcessID == *self
-	}
-}
-impl ProcessIdentifier for &str {
-	fn name(&self) -> String {
-		self.to_string()
-	}
-	fn matches_entry(&self, entry:&PROCESSENTRY32) -> bool {
-		let name_bytes:&[u8] = unsafe { CStr::from_ptr(entry.szExeFile.as_ptr()).to_bytes() };
-		if let Ok(entry_process_name) = str::from_utf8(name_bytes) {
-			entry_process_name == *self
-		} else {
-			false
-		}
 	}
 }
