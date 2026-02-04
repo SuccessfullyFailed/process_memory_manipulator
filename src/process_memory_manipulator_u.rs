@@ -6,7 +6,6 @@ mod test {
 	const TEST_PROGRAM_EXE_NAME:&str = "process_memory_manipulator_test_program.exe";
 	const TEST_PROGRAM_PATH:&str = "_unit_test_program/target/debug/process_memory_manipulator_test_program.exe";
 	const TEST_PROGRAM_COMPILE_PATH:&str = "_unit_test_program";
-	const AWAIT_ADDRESS_PRINT_EXPECTED_COUNT:usize = 4;
 	const AWAIT_ADDRESS_PRINT_INTERVAL:Duration = Duration::from_millis(1);
 	const AWAIT_ADDRESS_PRINT_ATTEMPTS:usize = 200;
 
@@ -17,10 +16,12 @@ mod test {
 		// Run the unit test program.
 		let mut test_program:Child = create_test_program_process();
 		let addresses:Vec<u64> = fetch_printed_addresses(&mut test_program);
+		println!("Passed addresses from unit test tool: {:?}", addresses.iter().map(|address| format!("{:#02x}", address)).collect::<Vec<String>>());
 
 		// Run all tests.
 		read_process_memory(addresses[0]);
 		write_process_memory(addresses[1], addresses[2], addresses[3]);
+		read_process_memory_from_pointer(addresses[4], addresses[5], addresses[6]);
 
 		// Kill program.
 		test_program.kill().expect("Could not kill the test program.");
@@ -46,27 +47,25 @@ mod test {
 	/// Get a list of required addresses from the output of the test program.
 	fn fetch_printed_addresses(test_program_process:&mut Child) -> Vec<u64> {
 		use std::{ process::ChildStdout, io::{ BufRead, BufReader, Lines } };
-		
-		// Wait for program to print required variable addresses.
-		let mut address_lines:Vec<String> = Vec::new();
+		const END_TAG:u64 = 0x666;
+
+		let mut addresses:Vec<u64> = Vec::new();
 		for _ in 0..AWAIT_ADDRESS_PRINT_ATTEMPTS {
 			if let Some(stdout) = test_program_process.stdout.take() {				
 				let mut reader:Lines<BufReader<ChildStdout>> = BufReader::new(stdout).lines();
-				while address_lines.len() < AWAIT_ADDRESS_PRINT_EXPECTED_COUNT {
-					if let Some(line) = reader.next() {
-						address_lines.push(line.unwrap());
+				while let Some(line) = reader.next() {
+					if line.as_ref().is_ok_and(|line| line.starts_with("0x")) {
+						let address:u64 = u64::from_str_radix(&line.unwrap()[2..], 16).unwrap();
+						addresses.push(address);
+						if address == END_TAG {
+							break;
+						}
 					}
-				}
-				if address_lines.len() >= AWAIT_ADDRESS_PRINT_EXPECTED_COUNT {
-					break;
 				}
 			}
 			sleep(AWAIT_ADDRESS_PRINT_INTERVAL);
 		}
-		if address_lines.len() < AWAIT_ADDRESS_PRINT_EXPECTED_COUNT { panic!("Could not get all required addresses from unit test program"); }
-
-		// Turn lines into addresses.
-		address_lines.iter().map(|line| u64::from_str_radix(&line[2..], 16).unwrap()).collect::<Vec<u64>>()
+		addresses
 	}
 
 
@@ -80,7 +79,7 @@ mod test {
 		// Read memory.
 		let mut pmm:ProcessMemoryManipulator64 = ProcessMemoryManipulator64::new(TEST_PROGRAM_EXE_NAME, false);
 		let bytes:Vec<u8> = pmm.read_bytes(address, 4).expect("Could not read memory address");
-		let value:u32 = pmm.read::<u32>(address).expect("Could not read memory address");
+		let value:u32 = pmm.read(address).expect("Could not read memory address");
 
 		// Validate value.
 		const EXPECTED_VALUE:u32 = 1618;
@@ -93,11 +92,25 @@ mod test {
 
 		// Read memory.
 		let mut pmm:ProcessMemoryManipulator64 = ProcessMemoryManipulator64::new(TEST_PROGRAM_EXE_NAME, false);
-		let left_value:u16 = pmm.read::<u16>(address_left).expect("Could not get left value.");
+		let left_value:u16 = pmm.read(address_left).expect("Could not get left value.");
 		pmm.write::<u16>(address_right, left_value).expect("Could not write right value.");
 
 		// Validate result.
 		sleep(Duration::from_millis(2));
-		assert_eq!(pmm.read::<u8>(address_confirmation).expect("Could not read confirmation address."), 1);
+		assert_eq!(pmm.read::<u8, u64>(address_confirmation).expect("Could not read confirmation address."), 1);
+	}
+
+	/// Test if memory_annihilator can read bytes and parse values from memory of external programs.
+	fn read_process_memory_from_pointer(address:u64, offset_1:u64, offset_2:u64) {
+
+		// Read memory.
+		let mut pmm:ProcessMemoryManipulator64 = ProcessMemoryManipulator64::new(TEST_PROGRAM_EXE_NAME, false);
+		let bytes:Vec<u8> = pmm.read_bytes([address, offset_1, offset_2], 4).expect("Could not read memory address");
+		let value:f32 = pmm.read([address, offset_1, offset_2]).expect("Could not read memory address");
+
+		// Validate value.
+		const EXPECTED_VALUE:f32 = 912.80;
+		assert_eq!(bytes, EXPECTED_VALUE.to_le_bytes());
+		assert_eq!(value, EXPECTED_VALUE);
 	}
 }

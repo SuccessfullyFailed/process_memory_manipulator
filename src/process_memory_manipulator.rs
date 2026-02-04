@@ -1,6 +1,6 @@
+use winapi::{ ctypes::c_void, um::{ errhandlingapi::GetLastError, winnt::HANDLE as WinHandle, memoryapi::{ ReadProcessMemory, WriteProcessMemory } } };
 use crate::{ MemoryAccessToken, MemoryDataType, ProcessHandle, ProcessIdentifier };
-use std::{ error::Error, fmt::{ Debug, LowerHex }, ptr };
-use winapi::{ctypes::c_void, um::{errhandlingapi::GetLastError, memoryapi::{ReadProcessMemory, WriteProcessMemory}, winnt::HANDLE as WinHandle}};
+use std::{ error::Error, fmt::{ Debug, LowerHex }, ops::Add, ptr };
 
 
 
@@ -65,7 +65,7 @@ impl<AddressType:AddressSourceType> ProcessMemoryManipulator<AddressType> {
 	/* MEMORY READ AND WRITE METHODS */
 
 	/// Read an array of bytes from memory.
-	pub fn read_bytes(&mut self, address:AddressType, amount_of_bytes:usize) -> Result<Vec<u8>, Box<dyn Error>> {		
+	pub fn read_bytes<AddressReference:MemoryAddressReference<AddressType>>(&mut self, address_reference:AddressReference, amount_of_bytes:usize) -> Result<Vec<u8>, Box<dyn Error>> {		
 		const READ_ACCESS:MemoryAccessToken = MemoryAccessToken(MemoryAccessToken::READ_CONTROL.0 | MemoryAccessToken::PROCESS_VM_READ.0);
 
 		// Create pointer to buffer to write to.
@@ -75,6 +75,7 @@ impl<AddressType:AddressSourceType> ProcessMemoryManipulator<AddressType> {
 		let mut bytes_read:usize = 0;
 
 		// Read the memory.
+		let address:AddressType = address_reference.to_raw_address(self)?;
 		let exit_status:i32 = unsafe { ReadProcessMemory(self.win_handle(READ_ACCESS)?, address.to_c_void_ptr(), buffer_ptr, amount_of_bytes, &mut bytes_read) };
 		if exit_status == 0 {
 			return Err(format!("Memory Read on address {:#08x} failed with error code {}.", address, unsafe { GetLastError() }).into());
@@ -85,7 +86,8 @@ impl<AddressType:AddressSourceType> ProcessMemoryManipulator<AddressType> {
 	}
 
 	/// Read a value from memory.
-	pub fn read<DataType:MemoryDataType>(&mut self, address:AddressType) -> Result<DataType, Box<dyn Error>> {
+	pub fn read<DataType:MemoryDataType, AddressReference:MemoryAddressReference<AddressType>>(&mut self, address_reference:AddressReference) -> Result<DataType, Box<dyn Error>> {
+		let address:AddressType = address_reference.to_raw_address(self)?;
 		let read_bytes:Vec<u8> = self.read_bytes(address, DataType::BYTES_SIZE)?;
 		Ok(
 			if self.big_endian {
@@ -119,7 +121,7 @@ impl<AddressType:AddressSourceType> ProcessMemoryManipulator<AddressType> {
 
 
 
-pub trait AddressSourceType:Debug + Default + LowerHex {
+pub trait AddressSourceType:Debug + Default + LowerHex + Clone + PartialEq + Add<Output=Self> {
 	fn to_c_void_ptr(&self) -> *const c_void;
 	fn to_c_void_ptr_mut(&self) -> *mut c_void;
 }
@@ -137,5 +139,39 @@ impl AddressSourceType for u32 {
 	}
 	fn to_c_void_ptr_mut(&self) -> *mut c_void {
 		*self as *mut c_void
+	}
+}
+
+
+
+pub trait MemoryAddressReference<AddressType:AddressSourceType> {
+	fn to_raw_address(&self, pmm:&mut ProcessMemoryManipulator<AddressType>) -> Result<AddressType, Box<dyn Error>>;
+}
+impl<AddressType:AddressSourceType + Clone> MemoryAddressReference<AddressType> for AddressType {
+	fn to_raw_address(&self, _pmm:&mut ProcessMemoryManipulator<AddressType>) -> Result<AddressType, Box<dyn Error>> {
+		Ok(self.clone())
+	}
+}
+impl<AddressType:AddressSourceType + MemoryDataType> MemoryAddressReference<AddressType> for Vec<AddressType> {
+	fn to_raw_address(&self, pmm:&mut ProcessMemoryManipulator<AddressType>) -> Result<AddressType, Box<dyn Error>> {
+		self[..].to_raw_address(pmm)
+	}
+}
+impl<AddressType:AddressSourceType + MemoryDataType, const ARRAY_SIZE:usize> MemoryAddressReference<AddressType> for [AddressType; ARRAY_SIZE] {
+	fn to_raw_address(&self, pmm:&mut ProcessMemoryManipulator<AddressType>) -> Result<AddressType, Box<dyn Error>> {
+		self[..].to_raw_address(pmm)
+	}
+}
+impl<AddressType:AddressSourceType + MemoryDataType> MemoryAddressReference<AddressType> for [AddressType] {
+	fn to_raw_address(&self, pmm:&mut ProcessMemoryManipulator<AddressType>) -> Result<AddressType, Box<dyn Error>> {
+		if self.is_empty() {
+			return Err("Could not get memory address from empty list. At least one address is required.".into());
+		}
+		let mut address:AddressType = self[0].clone();
+		for offset in &self[1..] {
+			address = pmm.read(address)?;
+			address = address + offset.clone();
+		}
+		Ok(address)
 	}
 }
