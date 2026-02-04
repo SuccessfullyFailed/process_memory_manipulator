@@ -3,9 +3,15 @@
 version = 4
 
 [[package]]
+name = "mini_rand"
+version = "0.1.0"
+source = "git+https://github.com/SuccessfullyFailed/mini_rand#bb8c9ceed843f684246725c788f81dce52cbe3a0"
+
+[[package]]
 name = "process_memory_manipulator"
 version = "0.1.0"
 dependencies = [
+ "mini_rand",
  "winapi",
 ]
 
