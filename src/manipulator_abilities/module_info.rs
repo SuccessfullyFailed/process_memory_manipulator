@@ -20,18 +20,18 @@ impl<AddressType:AddressSourceType> ModuleInfo<AddressType> {
 	}
 
 	/// Get the base address of the module.
-	pub fn base_address(&self) -> &AddressType {
-		&self.base_address
+	pub fn base_address(&self) -> AddressType {
+		self.base_address
 	}
 
 	/// Get the size of the module in bytes.
-	pub fn size(&self) -> &AddressType {
-		&self.size
+	pub fn size(&self) -> AddressType {
+		self.size
 	}
 
 	/// Get the entry-point of the module.
-	pub fn entry_point(&self) -> &AddressType {
-		&self.entry_point
+	pub fn entry_point(&self) -> AddressType {
+		self.entry_point
 	}
 }
 
@@ -75,7 +75,7 @@ impl<AddressType:AddressSourceType> ProcessMemoryManipulator<AddressType> {
 					if GetModuleBaseNameA(process_handle, *module_handle, loop_module_name_buf.as_ptr() as *mut _, loop_module_name_buf.len() as DWORD) == 0 {
 						continue;
 					}
-					let loop_module_name:String = String::from_utf8_lossy(&loop_module_name_buf[..]).to_string();
+					let loop_module_name:String = String::from_utf8_lossy(&loop_module_name_buf.into_iter().take_while(|char| *char != 0).collect::<Vec<u8>>()).to_string();
 
 					// Check match module name matches target module name.
 					if loop_module_name.contains(module_name) {

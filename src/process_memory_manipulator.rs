@@ -77,7 +77,7 @@ impl<AddressType:AddressSourceType> ProcessMemoryManipulator<AddressType> {
 
 
 
-pub trait AddressSourceType:Debug + Default + LowerHex + Clone + PartialEq + Add<Output=Self> {
+pub trait AddressSourceType:Debug + Default + LowerHex + Copy + PartialEq + Add<Output=Self> {
 	fn to_usize(&self) -> usize;
 	fn to_c_void_ptr(&self) -> *const c_void;
 	fn to_c_void_ptr_mut(&self) -> *mut c_void;
