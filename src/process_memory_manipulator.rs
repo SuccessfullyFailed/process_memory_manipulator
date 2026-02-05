@@ -78,11 +78,15 @@ impl<AddressType:AddressSourceType> ProcessMemoryManipulator<AddressType> {
 
 
 pub trait AddressSourceType:Debug + Default + LowerHex + Clone + PartialEq + Add<Output=Self> {
+	fn to_usize(&self) -> usize;
 	fn to_c_void_ptr(&self) -> *const c_void;
 	fn to_c_void_ptr_mut(&self) -> *mut c_void;
 	fn from_u64(address:u64) -> Self;
 }
 impl AddressSourceType for u64 {
+	fn to_usize(&self) -> usize {
+		*self as usize
+	}
 	fn to_c_void_ptr(&self) -> *const c_void {
 		*self as *const c_void
 	}
@@ -94,6 +98,9 @@ impl AddressSourceType for u64 {
 	}
 }
 impl AddressSourceType for u32 {
+	fn to_usize(&self) -> usize {
+		*self as usize
+	}
 	fn to_c_void_ptr(&self) -> *const c_void {
 		*self as *const c_void
 	}
