@@ -1,4 +1,4 @@
-use winapi::{ ctypes::c_void, um::{ errhandlingapi::GetLastError, memoryapi::{ VirtualAllocEx, VirtualQueryEx }, winnt::{ HANDLE as WinHandle, MEM_COMMIT, MEM_RESERVE, MEMORY_BASIC_INFORMATION, PAGE_EXECUTE_READWRITE } } };
+use winapi::{ ctypes::c_void, um::{ errhandlingapi::GetLastError, memoryapi::{ VirtualAllocEx, VirtualQueryEx }, winnt::{ HANDLE as WinHandle, MEM_COMMIT, MEM_RESERVE, MEMORY_BASIC_INFORMATION, PAGE_EXECUTE_READ, PAGE_EXECUTE_READWRITE, PAGE_EXECUTE_WRITECOPY, PAGE_READONLY, PAGE_READWRITE, PAGE_WRITECOPY } } };
 use crate::{ AddressSourceType, MemoryAccessToken, ProcessMemoryManipulator };
 use std::{ error::Error, mem };
 
@@ -32,6 +32,19 @@ impl<AddressType:AddressSourceType> MemoryRegion<AddressType> {
 	/// Get the protection of the memory region.
 	pub fn protection(&self) -> u32 {
 		self.protection
+	}
+
+	/// Whether or not the region is readable.
+	pub(crate) fn is_readable(&self) -> bool {
+		self.state() == MEM_COMMIT &&
+		[
+			PAGE_READONLY,
+			PAGE_READWRITE,
+			PAGE_WRITECOPY,
+			PAGE_EXECUTE_READ,
+			PAGE_EXECUTE_READWRITE,
+			PAGE_EXECUTE_WRITECOPY
+		].iter().any(|token| self.protection & *token == *token)
 	}
 }
 

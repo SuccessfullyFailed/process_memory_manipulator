@@ -1,5 +1,5 @@
+use std::{ ops::Add, error::Error, fmt::{ Debug, Display, LowerHex } };
 use winapi::{ ctypes::c_void, um::{ winnt::HANDLE as WinHandle } };
-use std::{ error::Error, ops::Add, fmt::{ Debug, LowerHex } };
 use crate::{ MemoryAccessToken, ProcessHandle };
 
 
@@ -77,11 +77,12 @@ impl<AddressType:AddressSourceType> ProcessMemoryManipulator<AddressType> {
 
 
 
-pub trait AddressSourceType:Debug + Default + LowerHex + Copy + PartialEq + Add<Output=Self> {
+pub trait AddressSourceType:Debug + Display + Default + LowerHex + Copy + PartialEq + Add<Output=Self> {
 	fn to_usize(&self) -> usize;
 	fn to_c_void_ptr(&self) -> *const c_void;
 	fn to_c_void_ptr_mut(&self) -> *mut c_void;
 	fn from_u64(address:u64) -> Self;
+	fn from_usize(address:usize) -> Self;
 }
 impl AddressSourceType for u64 {
 	fn to_usize(&self) -> usize {
@@ -96,6 +97,9 @@ impl AddressSourceType for u64 {
 	fn from_u64(address:u64) -> Self {
 		address
 	}
+	fn from_usize(address:usize) -> Self {
+		address as u64
+	}
 }
 impl AddressSourceType for u32 {
 	fn to_usize(&self) -> usize {
@@ -108,6 +112,9 @@ impl AddressSourceType for u32 {
 		*self as *mut c_void
 	}
 	fn from_u64(address:u64) -> Self {
+		address as u32
+	}
+	fn from_usize(address:usize) -> Self {
 		address as u32
 	}
 }
