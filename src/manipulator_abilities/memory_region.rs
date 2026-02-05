@@ -15,23 +15,23 @@ impl<AddressType:AddressSourceType> MemoryRegion<AddressType> {
 	/* PROPERTY GETTER METHODS */
 
 	/// Get the base address of the memory region.
-	pub fn base_address(&self) -> &AddressType {
-		&self.base_address
+	pub fn base_address(&self) -> AddressType {
+		self.base_address
 	}
 
 	/// Get the size of the memory region in bytes.
-	pub fn size(&self) -> &AddressType {
-		&self.size
+	pub fn size(&self) -> AddressType {
+		self.size
 	}
 
 	/// Get the state of the memory region.
-	pub fn state(&self) -> &u32 {
-		&self.state
+	pub fn state(&self) -> u32 {
+		self.state
 	}
 
 	/// Get the protection of the memory region.
-	pub fn protection(&self) -> &u32 {
-		&self.protection
+	pub fn protection(&self) -> u32 {
+		self.protection
 	}
 }
 
