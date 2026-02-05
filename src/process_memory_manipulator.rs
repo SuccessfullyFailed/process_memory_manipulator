@@ -1,4 +1,4 @@
-use std::{ ops::Add, error::Error, fmt::{ Debug, Display, LowerHex } };
+use std::{ error::Error, fmt::{ Debug, Display, LowerHex }, ops::{Add, Sub} };
 use winapi::{ ctypes::c_void, um::{ winnt::HANDLE as WinHandle } };
 use crate::{ MemoryAccessToken, ProcessHandle };
 
@@ -77,7 +77,7 @@ impl<AddressType:AddressSourceType> ProcessMemoryManipulator<AddressType> {
 
 
 
-pub trait AddressSourceType:Debug + Display + Default + LowerHex + Copy + PartialEq + Add<Output=Self> {
+pub trait AddressSourceType:Debug + Display + Default + LowerHex + Copy + PartialEq + Add<Output=Self> + Sub<Output=Self> {
 	fn to_usize(&self) -> usize;
 	fn to_c_void_ptr(&self) -> *const c_void;
 	fn to_c_void_ptr_mut(&self) -> *mut c_void;

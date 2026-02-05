@@ -95,3 +95,13 @@ impl<AddressType:AddressSourceType + MemoryDataType> MemoryAddressReference<Addr
 		Ok(address)
 	}
 }
+impl<AddressType:AddressSourceType> MemoryAddressReference<AddressType> for &str {
+	fn to_raw_address(&self, pmm:&mut ProcessMemoryManipulator<AddressType>) -> Result<AddressType, Box<dyn Error>> {
+		pmm.get_module_base_address(self)
+	}
+}
+impl<AddressType:AddressSourceType> MemoryAddressReference<AddressType> for String {
+	fn to_raw_address(&self, pmm:&mut ProcessMemoryManipulator<AddressType>) -> Result<AddressType, Box<dyn Error>> {
+		self.as_str().to_raw_address(pmm)
+	}
+}

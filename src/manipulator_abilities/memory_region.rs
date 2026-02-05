@@ -4,6 +4,7 @@ use std::{ error::Error, mem };
 
 
 
+#[derive(Clone)]
 pub struct MemoryRegion<AddressType:AddressSourceType> {
 	base_address:AddressType,
 	size:AddressType,
