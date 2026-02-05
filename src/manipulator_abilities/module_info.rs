@@ -1,6 +1,6 @@
-use winapi::um::winnt::HANDLE as WinHandle;
+use winapi::{ shared::{minwindef::{ DWORD, HINSTANCE__ }, ntdef::HANDLE as ModuleHandle }, um::{ psapi::{ EnumProcessModulesEx, GetModuleBaseNameA, GetModuleInformation, MODULEINFO }, winnt::HANDLE as WinHandle } };
 use crate::{ AddressSourceType, MemoryAccessToken, ProcessMemoryManipulator };
-use std::error::Error;
+use std::{ error::Error, mem, ptr };
 
 
 
@@ -57,27 +57,22 @@ impl<AddressType:AddressSourceType> ProcessMemoryManipulator<AddressType> {
 	
 	/// Get a modules info.
 	pub fn get_module_info(&mut self, module_name:&str) -> Result<ModuleInfo<AddressType>, Box<dyn Error>> {
-		use winapi::{ shared::minwindef::{ DWORD, HINSTANCE__ }, um::{ psapi::{ EnumProcessModulesEx, GetModuleBaseNameA, GetModuleInformation, MODULEINFO }, winnt::HANDLE } };
-		use std::{ ptr, mem::{ size_of, zeroed } };
-		
+		const MODULE_INFO_ACCESS:MemoryAccessToken = MemoryAccessToken(MemoryAccessToken::PROCESS_QUERY_LIMITED_INFORMATION.0 | MemoryAccessToken::PROCESS_VM_READ.0);
 		unsafe {
 
-			// Get the process handle.
-			const MODULE_INFO_ACCESS:MemoryAccessToken = MemoryAccessToken(MemoryAccessToken::PROCESS_QUERY_LIMITED_INFORMATION.0 | MemoryAccessToken::PROCESS_VM_READ.0);
-			let handle:WinHandle = self.win_handle(MODULE_INFO_ACCESS)?;
-				
 			// Get module handles.
+			let process_handle:WinHandle = self.win_handle(MODULE_INFO_ACCESS)?;
 			let mut module_handles_buffer:Vec<*mut HINSTANCE__> = vec![ptr::null_mut(); 1024 * 10];
 			let mut bytes_returned:u32 = 0; 
-			if EnumProcessModulesEx(handle, module_handles_buffer.as_mut_ptr(), (module_handles_buffer.len() * size_of::<HANDLE>()) as DWORD, &mut bytes_returned, 0x03) != 0 {
+			if EnumProcessModulesEx(process_handle, module_handles_buffer.as_mut_ptr(), (module_handles_buffer.len() * size_of::<ModuleHandle>()) as DWORD, &mut bytes_returned, 0x03) != 0 {
 				
 				// Loop through modules.
-				let modules_count:usize = bytes_returned as usize / size_of::<HANDLE>();
+				let modules_count:usize = bytes_returned as usize / size_of::<ModuleHandle>();
 				for module_handle in module_handles_buffer.iter().take(modules_count) {
 
 					// Get module name.
 					let loop_module_name_buf:[u8; 256] = [0u8; 256];
-					if GetModuleBaseNameA(handle, *module_handle, loop_module_name_buf.as_ptr() as *mut _, loop_module_name_buf.len() as DWORD) == 0 {
+					if GetModuleBaseNameA(process_handle, *module_handle, loop_module_name_buf.as_ptr() as *mut _, loop_module_name_buf.len() as DWORD) == 0 {
 						continue;
 					}
 					let loop_module_name:String = String::from_utf8_lossy(&loop_module_name_buf[..]).to_string();
@@ -85,16 +80,16 @@ impl<AddressType:AddressSourceType> ProcessMemoryManipulator<AddressType> {
 					// Check match module name matches target module name.
 					if loop_module_name.contains(module_name) {
 
-						let mut module_info:MODULEINFO = zeroed();
-						if GetModuleInformation(handle, *module_handle, &mut module_info, size_of::<MODULEINFO>() as u32) == 0 {
+						let mut module_info:MODULEINFO = mem::zeroed();
+						if GetModuleInformation(process_handle, *module_handle, &mut module_info, size_of::<MODULEINFO>() as u32) == 0 {
 							continue;
 						}
 
 						return Ok(ModuleInfo {
 							name: loop_module_name,
-							base_address: AddressType::from_c_void_mut(module_info.lpBaseOfDll as u64),
-							size: AddressType::from_c_void_mut(module_info.SizeOfImage as u64),
-							entry_point: AddressType::from_c_void_mut(module_info.EntryPoint as u64)
+							base_address: AddressType::from_u64(module_info.lpBaseOfDll as u64),
+							size: AddressType::from_u64(module_info.SizeOfImage as u64),
+							entry_point: AddressType::from_u64(module_info.EntryPoint as u64)
 						});
 					}
 				}

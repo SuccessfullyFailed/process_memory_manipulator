@@ -41,10 +41,11 @@ impl<AddressType:AddressSourceType> ProcessMemoryManipulator<AddressType> {
 	}
 
 	/// Write an array of bytes to memory.
-	pub fn write_bytes(&mut self, address:AddressType, bytes:&[u8]) -> Result<(), Box<dyn Error>> {
+	pub fn write_bytes<AddressReference:MemoryAddressReference<AddressType>>(&mut self, address_reference:AddressReference, bytes:&[u8]) -> Result<(), Box<dyn Error>> {
 		const WRITE_ACCESS:MemoryAccessToken = MemoryAccessToken(MemoryAccessToken::PROCESS_QUERY_INFORMATION.0 | MemoryAccessToken::PROCESS_VM_WRITE.0 | MemoryAccessToken::PROCESS_VM_OPERATION.0);
 
 		// Write the memory.
+		let address:AddressType = address_reference.to_raw_address(self)?;
 		let exit_status:i32 = unsafe { WriteProcessMemory(self.win_handle(WRITE_ACCESS)?, address.to_c_void_ptr_mut(), bytes.as_ptr() as *const c_void, bytes.len(), ptr::null_mut()) };
 		if exit_status == 0 {
 			return Err(format!("Memory Write on address {:#02x} failed with error code {}.", address, unsafe { GetLastError() }).into());
@@ -55,9 +56,9 @@ impl<AddressType:AddressSourceType> ProcessMemoryManipulator<AddressType> {
 	}
 
 	/// Write a value to memory.
-	pub fn write<DataType:MemoryDataType>(&mut self, address:AddressType, value:DataType) -> Result<(), Box<dyn Error>> {
+	pub fn write<DataType:MemoryDataType, AddressReference:MemoryAddressReference<AddressType>>(&mut self, address_reference:AddressReference, value:DataType) -> Result<(), Box<dyn Error>> {
 		let value_as_bytes:Vec<u8> = if self.big_endian() { value.mdt_to_be_bytes() } else { value.mdt_to_le_bytes() };
-		self.write_bytes(address, &value_as_bytes)
+		self.write_bytes(address_reference, &value_as_bytes)
 	}
 }
 
