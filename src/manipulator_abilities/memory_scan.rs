@@ -1,4 +1,4 @@
-use crate::{ AddressSourceType, MemoryDataType, MemorySnapshot, ProcessMemoryManipulator };
+use crate::{ AddressSourceType, MemoryDataType, MemoryDataTypeSized, MemorySnapshot, ProcessMemoryManipulator };
 use std::{ ptr, ops::Range, error::Error };
 
 
@@ -7,6 +7,15 @@ pub struct MemoryScanResult<AddressType:AddressSourceType, ValueType:MemoryDataT
 	results:Vec<(AddressType, ValueType)>
 }
 impl<AddressType:AddressSourceType, ValueType:MemoryDataType> MemoryScanResult<AddressType, ValueType> {
+
+	/* USAGE METHODS */
+
+	/// Flip the endian of all values.
+	pub fn flip_endian(self) -> Self {
+		MemoryScanResult {
+			results: self.results.into_iter().map(|(address, value)| (address, value.mdt_flip_endian())).collect()
+		}
+	}
 
 	/* PROPERTY GETTER METHODS */
 
@@ -25,13 +34,23 @@ impl<AddressType:AddressSourceType + PartialEq + PartialOrd> ProcessMemoryManipu
 	/// Scan the memory for a specific value.
 	pub fn scan_exact_value<ValueType:MemoryDataType + Copy + PartialEq + 'static>(&mut self, value:ValueType) -> Result<MemoryScanResult<AddressType, ValueType>, Box<dyn Error>> {
 		let snapshot:MemorySnapshot<AddressType> = self.create_memory_snapshot("", None)?;
-		self.scan(move |found_value| found_value == &value, &snapshot)
+		if self.big_endian() {
+			let value:ValueType = value.mdt_flip_endian();
+			self.scan(move |found_value| found_value == &value, &snapshot).map(|result| result.flip_endian())
+		} else {
+			self.scan(move |found_value| found_value == &value, &snapshot)
+		}
 	}
 
 	/// Re-scan the memory for a specific value.
 	pub fn re_scan_exact_value<ValueType:MemoryDataType + Copy + PartialEq + 'static>(&mut self, value:ValueType, previous_results:&MemoryScanResult<AddressType, ValueType>) -> Result<MemoryScanResult<AddressType, ValueType>, Box<dyn Error>> {
 		let snapshot:MemorySnapshot<AddressType> = self.create_memory_snapshot("", None)?;
-		self.re_scan(move |found_value, _previous_found_value| found_value == &value, previous_results, &snapshot)
+		if self.big_endian() {
+			let value:ValueType = value.mdt_flip_endian();
+			self.re_scan(move |found_value, _previous_found_value| found_value == &value, previous_results, &snapshot).map(|result| result.flip_endian())
+		} else {
+			self.re_scan(move |found_value, _previous_found_value| found_value == &value, previous_results, &snapshot)
+		}
 	}
 
 
@@ -39,7 +58,10 @@ impl<AddressType:AddressSourceType + PartialEq + PartialOrd> ProcessMemoryManipu
 	/* RAW SCAN METHODS */
 
 	/// Scan for a value with a value filter.
-	pub fn scan<ValueType:MemoryDataType + Copy, ValueFilter:Fn(&ValueType) -> bool>(&mut self, value_filter:ValueFilter, snapshot:&MemorySnapshot<AddressType>) -> Result<MemoryScanResult<AddressType, ValueType>, Box<dyn Error>> {
+	/// The value in the filter is little endian, cast directly from the list of bytes from the snapshot.
+	/// If you want to use a value in the filter when the target process does not use big endian, flip it first.
+	/// The value can be flipped using the 'flip_endian' function on the value.
+	fn scan<ValueType:MemoryDataType + Copy, ValueFilter:Fn(&ValueType) -> bool>(&mut self, value_filter:ValueFilter, snapshot:&MemorySnapshot<AddressType>) -> Result<MemoryScanResult<AddressType, ValueType>, Box<dyn Error>> {
 		const LIST_GROWTH_INCREMENT_SIZE:usize = 4096;
 
 		// Validate arguments.
@@ -81,7 +103,10 @@ impl<AddressType:AddressSourceType + PartialEq + PartialOrd> ProcessMemoryManipu
 	}
 
 	/// Re-scan for a value with a filter on the current and previous value.
-	pub fn re_scan<ValueType:MemoryDataType + Copy, ValueFilter:Fn(&ValueType, &ValueType) -> bool>(&mut self, filter:ValueFilter, previous_results:&MemoryScanResult<AddressType, ValueType>, snapshot:&MemorySnapshot<AddressType>) -> Result<MemoryScanResult<AddressType, ValueType>, Box<dyn Error>> {
+	/// The value in the filter is little endian, cast directly from the list of bytes from the snapshot.
+	/// If you want to use a value in the filter when the target process does not use big endian, flip it first.
+	/// The value can be flipped using the 'flip_endian' function on the value.
+	fn re_scan<ValueType:MemoryDataType + Copy, ValueFilter:Fn(&ValueType, &ValueType) -> bool>(&mut self, filter:ValueFilter, previous_results:&MemoryScanResult<AddressType, ValueType>, snapshot:&MemorySnapshot<AddressType>) -> Result<MemoryScanResult<AddressType, ValueType>, Box<dyn Error>> {
 		const LIST_GROWTH_INCREMENT_SIZE:usize = 4096;
 
 		// Validate arguments.

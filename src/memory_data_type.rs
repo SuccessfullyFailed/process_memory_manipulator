@@ -10,6 +10,12 @@ pub trait MemoryDataType {
 	fn mdt_from_le_bytes(bytes:Vec<u8>) -> Self;
 	fn mdt_to_le_bytes(self) -> Vec<u8>;
 }
+pub trait MemoryDataTypeSized:MemoryDataType + Sized {
+	fn mdt_flip_endian(self) -> Self {
+		Self::mdt_from_le_bytes(self.mdt_to_be_bytes())
+	}
+}
+impl<T:MemoryDataType + Sized> MemoryDataTypeSized for T {}
 
 
 /* IMPLEMENT FOR ATOMS */
