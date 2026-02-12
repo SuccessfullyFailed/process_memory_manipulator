@@ -1,4 +1,4 @@
-use crate::{ AddressSourceType, MemoryDataType, MemoryDataTypeSized, MemorySnapshot, ProcessMemoryManipulator };
+use crate::{ AddressSourceType, MemoryDataType, MemorySnapshot, ProcessMemoryManipulator };
 use std::{ ptr, ops::Range, error::Error };
 
 
@@ -7,17 +7,6 @@ pub struct MemoryScanResult<AddressType:AddressSourceType, ValueType:MemoryDataT
 	results:Vec<(AddressType, ValueType)>
 }
 impl<AddressType:AddressSourceType, ValueType:MemoryDataType> MemoryScanResult<AddressType, ValueType> {
-
-	/* USAGE METHODS */
-
-	/// Flip the endian of all values.
-	pub fn flip_endian(self) -> Self {
-		MemoryScanResult {
-			results: self.results.into_iter().map(|(address, value)| (address, value.mdt_flip_endian())).collect()
-		}
-	}
-
-	/* PROPERTY GETTER METHODS */
 
 	/// Get the results of the scan.
 	pub fn results(&self) -> &[(AddressType, ValueType)] {
@@ -34,23 +23,13 @@ impl<AddressType:AddressSourceType + PartialEq + PartialOrd> ProcessMemoryManipu
 	/// Scan the memory for a specific value.
 	pub fn scan_exact_value<ValueType:MemoryDataType + Copy + PartialEq + 'static>(&mut self, value:ValueType) -> Result<MemoryScanResult<AddressType, ValueType>, Box<dyn Error>> {
 		let snapshot:MemorySnapshot<AddressType> = self.create_memory_snapshot("", None)?;
-		if self.big_endian() {
-			let value:ValueType = value.mdt_flip_endian();
-			self.scan(move |found_value| found_value == &value, &snapshot).map(|result| result.flip_endian())
-		} else {
-			self.scan(move |found_value| found_value == &value, &snapshot)
-		}
+		self.scan(move |found_value| found_value == &value, &snapshot)
 	}
 
 	/// Re-scan the memory for a specific value.
 	pub fn re_scan_exact_value<ValueType:MemoryDataType + Copy + PartialEq + 'static>(&mut self, value:ValueType, previous_results:&MemoryScanResult<AddressType, ValueType>) -> Result<MemoryScanResult<AddressType, ValueType>, Box<dyn Error>> {
 		let snapshot:MemorySnapshot<AddressType> = self.create_memory_snapshot("", None)?;
-		if self.big_endian() {
-			let value:ValueType = value.mdt_flip_endian();
-			self.re_scan(move |found_value, _previous_found_value| found_value == &value, previous_results, &snapshot).map(|result| result.flip_endian())
-		} else {
-			self.re_scan(move |found_value, _previous_found_value| found_value == &value, previous_results, &snapshot)
-		}
+		self.re_scan(move |found_value, _previous_found_value| found_value == &value, previous_results, &snapshot)
 	}
 
 
@@ -58,9 +37,6 @@ impl<AddressType:AddressSourceType + PartialEq + PartialOrd> ProcessMemoryManipu
 	/* RAW SCAN METHODS */
 
 	/// Scan for a value with a value filter.
-	/// The value in the filter is little endian, cast directly from the list of bytes from the snapshot.
-	/// If you want to use a value in the filter when the target process does not use big endian, flip it first.
-	/// The value can be flipped using the 'flip_endian' function on the value.
 	fn scan<ValueType:MemoryDataType + Copy, ValueFilter:Fn(&ValueType) -> bool>(&mut self, value_filter:ValueFilter, snapshot:&MemorySnapshot<AddressType>) -> Result<MemoryScanResult<AddressType, ValueType>, Box<dyn Error>> {
 		const LIST_GROWTH_INCREMENT_SIZE:usize = 4096;
 
@@ -69,6 +45,15 @@ impl<AddressType:AddressSourceType + PartialEq + PartialOrd> ProcessMemoryManipu
 		if arguments_invalid {
 			return Ok(MemoryScanResult { results: Vec::new() });
 		}
+
+		// Create a short-hand bytes to value casting function.
+		let bytes_to_value:fn(ValueType::Bytes) -> ValueType = {
+			if self.big_endian() {
+				ValueType::mdt_from_be_bytes
+			} else {
+				ValueType::mdt_from_le_bytes
+			}
+		};
 
 		// Loop through addresses ranges of the snapshot.
 		let mut results:Vec<(AddressType, ValueType)> = Vec::with_capacity(LIST_GROWTH_INCREMENT_SIZE);
@@ -80,11 +65,12 @@ impl<AddressType:AddressSourceType + PartialEq + PartialOrd> ProcessMemoryManipu
 
 				// Loop through addresses in the snapshot data.
 				let offset_end:usize = block_size - ValueType::BYTES_SIZE - 1;
-				let value_pointer:*const ValueType = &block_bytes[0] as *const u8 as *const ValueType;
+				let value_pointer:*const ValueType::Bytes = &block_bytes[0] as *const u8 as *const ValueType::Bytes;
 				for offset in 0..offset_end {
 
 					// If a value matches the filter, add it to the results list.
-					let value:ValueType = unsafe { ptr::read_unaligned(value_pointer.byte_add(offset) as *const ValueType) };
+					let value_bytes:ValueType::Bytes = unsafe { ptr::read_unaligned(value_pointer.byte_add(offset)) };
+					let value:ValueType = bytes_to_value(value_bytes);
 					if value_filter(&value) {
 						results.push((address_range.start + AddressType::from_usize(offset), value.clone()));
 						results_remaining_capacity -= 1;
@@ -103,9 +89,6 @@ impl<AddressType:AddressSourceType + PartialEq + PartialOrd> ProcessMemoryManipu
 	}
 
 	/// Re-scan for a value with a filter on the current and previous value.
-	/// The value in the filter is little endian, cast directly from the list of bytes from the snapshot.
-	/// If you want to use a value in the filter when the target process does not use big endian, flip it first.
-	/// The value can be flipped using the 'flip_endian' function on the value.
 	fn re_scan<ValueType:MemoryDataType + Copy, ValueFilter:Fn(&ValueType, &ValueType) -> bool>(&mut self, filter:ValueFilter, previous_results:&MemoryScanResult<AddressType, ValueType>, snapshot:&MemorySnapshot<AddressType>) -> Result<MemoryScanResult<AddressType, ValueType>, Box<dyn Error>> {
 		const LIST_GROWTH_INCREMENT_SIZE:usize = 4096;
 
@@ -115,10 +98,19 @@ impl<AddressType:AddressSourceType + PartialEq + PartialOrd> ProcessMemoryManipu
 			return Ok(MemoryScanResult { results: Vec::new() });
 		}
 
+		// Create a short-hand bytes to value casting function.
+		let bytes_to_value:fn(ValueType::Bytes) -> ValueType = {
+			if self.big_endian() {
+				ValueType::mdt_from_be_bytes
+			} else {
+				ValueType::mdt_from_le_bytes
+			}
+		};
+
 		// Loop through previous results, caching the current snapshot block.
 		let mut results:Vec<(AddressType, ValueType)> = Vec::with_capacity(LIST_GROWTH_INCREMENT_SIZE);
 		let mut results_remaining_capacity:usize = LIST_GROWTH_INCREMENT_SIZE;
-		let mut cached_bytes_block:(Range<AddressType>, Vec<u8>, *const u8) = (AddressType::default()..AddressType::default(), Vec::new(), ptr::null());
+		let mut cached_bytes_block:(Range<AddressType>, Vec<u8>, *const ValueType::Bytes) = (AddressType::default()..AddressType::default(), Vec::new(), ptr::null());
 		for (address, previous_value) in &previous_results.results {
 
 			// If the address does not fall within the cached snapshot block, cache the required block.
@@ -126,14 +118,15 @@ impl<AddressType:AddressSourceType + PartialEq + PartialOrd> ProcessMemoryManipu
 			if *address < cached_bytes_block.0.start || *address >= cached_bytes_block.0.end {
 				if let Some(current_snapshot) = snapshot.address_ranges().iter().find(|(range, _)| range.start <= *address && range.end > *address) {
 					cached_bytes_block = (current_snapshot.0.clone(), current_snapshot.1.get_bytes()?, ptr::null());
-					cached_bytes_block.2 = &cached_bytes_block.1[0] as *const u8;
+					cached_bytes_block.2 = &cached_bytes_block.1[0] as *const u8 as *const ValueType::Bytes;
 				} else {
 					continue;
 				}
 			}
 
 			// If the current and previous value matches the filter, add it to the results list.
-			let value:ValueType = unsafe { ptr::read_unaligned(cached_bytes_block.2.byte_add((*address - cached_bytes_block.0.start).to_usize()) as *const ValueType) };
+			let value_bytes:ValueType::Bytes = unsafe { ptr::read_unaligned(cached_bytes_block.2.byte_add((*address - cached_bytes_block.0.start).to_usize())) };
+			let value:ValueType = bytes_to_value(value_bytes);
 			if filter(&value, previous_value) {
 				results.push((*address, value));
 				results_remaining_capacity -= 1;

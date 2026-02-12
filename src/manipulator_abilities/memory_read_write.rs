@@ -28,14 +28,14 @@ impl<AddressType:AddressSourceType> ProcessMemoryManipulator<AddressType> {
 	}
 
 	/// Read a value from memory.
-	pub fn read<DataType:MemoryDataType, AddressReference:MemoryAddressReference<AddressType>>(&mut self, address_reference:AddressReference) -> Result<DataType, Box<dyn Error>> {
+	pub fn read<DataType:MemoryDataType, AddressReference:MemoryAddressReference<AddressType>>(&mut self, address_reference:AddressReference) -> Result<DataType, Box<dyn Error>> where DataType::Bytes:TryFrom<Vec<u8>> {
 		let address:AddressType = address_reference.to_raw_address(self)?;
 		let read_bytes:Vec<u8> = self.read_bytes(address, DataType::BYTES_SIZE)?;
 		Ok(
 			if self.big_endian() {
-				DataType::mdt_from_be_bytes(read_bytes)
+				DataType::mdt_from_be_bytes(read_bytes.try_into().ok().unwrap())
 			} else {
-				DataType::mdt_from_le_bytes(read_bytes)
+				DataType::mdt_from_le_bytes(read_bytes.try_into().ok().unwrap())
 			}
 		)
 	}
@@ -57,7 +57,7 @@ impl<AddressType:AddressSourceType> ProcessMemoryManipulator<AddressType> {
 
 	/// Write a value to memory.
 	pub fn write<DataType:MemoryDataType, AddressReference:MemoryAddressReference<AddressType>>(&mut self, address_reference:AddressReference, value:DataType) -> Result<(), Box<dyn Error>> {
-		let value_as_bytes:Vec<u8> = if self.big_endian() { value.mdt_to_be_bytes() } else { value.mdt_to_le_bytes() };
+		let value_as_bytes:Vec<u8> = if self.big_endian() { value.mdt_to_be_bytes_vec() } else { value.mdt_to_le_bytes_vec() };
 		self.write_bytes(address_reference, &value_as_bytes)
 	}
 }
@@ -72,17 +72,17 @@ impl<AddressType:AddressSourceType + Clone> MemoryAddressReference<AddressType> 
 		Ok(self.clone())
 	}
 }
-impl<AddressType:AddressSourceType + MemoryDataType> MemoryAddressReference<AddressType> for Vec<AddressType> {
+impl<AddressType:AddressSourceType + MemoryDataType> MemoryAddressReference<AddressType> for Vec<AddressType> where AddressType::Bytes:TryFrom<Vec<u8>> {
 	fn to_raw_address(&self, pmm:&mut ProcessMemoryManipulator<AddressType>) -> Result<AddressType, Box<dyn Error>> {
 		self[..].to_raw_address(pmm)
 	}
 }
-impl<AddressType:AddressSourceType + MemoryDataType, const ARRAY_SIZE:usize> MemoryAddressReference<AddressType> for [AddressType; ARRAY_SIZE] {
+impl<AddressType:AddressSourceType + MemoryDataType, const ARRAY_SIZE:usize> MemoryAddressReference<AddressType> for [AddressType; ARRAY_SIZE] where AddressType::Bytes:TryFrom<Vec<u8>> {
 	fn to_raw_address(&self, pmm:&mut ProcessMemoryManipulator<AddressType>) -> Result<AddressType, Box<dyn Error>> {
 		self[..].to_raw_address(pmm)
 	}
 }
-impl<AddressType:AddressSourceType + MemoryDataType> MemoryAddressReference<AddressType> for [AddressType] {
+impl<AddressType:AddressSourceType + MemoryDataType> MemoryAddressReference<AddressType> for [AddressType] where AddressType::Bytes:TryFrom<Vec<u8>> {
 	fn to_raw_address(&self, pmm:&mut ProcessMemoryManipulator<AddressType>) -> Result<AddressType, Box<dyn Error>> {
 		if self.is_empty() {
 			return Err("Could not get memory address from empty list. At least one address is required.".into());

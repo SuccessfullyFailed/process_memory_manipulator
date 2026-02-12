@@ -12,10 +12,10 @@ mod tests {
 		for _ in 0..RANDOM_NUMBER_QUANTITY {
 			let value:T = T::random();
 
-			let as_bytes_be:Vec<u8> = value.clone().mdt_to_be_bytes();
+			let as_bytes_be:T::Bytes = value.clone().mdt_to_be_bytes();
 			assert_eq!(value, T::mdt_from_be_bytes(as_bytes_be));
 
-			let as_bytes_le:Vec<u8> = value.clone().mdt_to_le_bytes();
+			let as_bytes_le:T::Bytes = value.clone().mdt_to_le_bytes();
 			assert_eq!(value, T::mdt_from_le_bytes(as_bytes_le));
 		}
 	}
