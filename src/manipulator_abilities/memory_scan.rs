@@ -37,7 +37,7 @@ impl<AddressType:AddressSourceType + PartialEq + PartialOrd> ProcessMemoryManipu
 	/* RAW SCAN METHODS */
 
 	/// Scan for a value with a value filter.
-	fn scan<ValueType:MemoryDataType + Copy, ValueFilter:Fn(&ValueType) -> bool>(&mut self, value_filter:ValueFilter, snapshot:&MemorySnapshot<AddressType>) -> Result<MemoryScanResult<AddressType, ValueType>, Box<dyn Error>> {
+	pub fn scan<ValueType:MemoryDataType + Copy, ValueFilter:Fn(&ValueType) -> bool>(&mut self, value_filter:ValueFilter, snapshot:&MemorySnapshot<AddressType>) -> Result<MemoryScanResult<AddressType, ValueType>, Box<dyn Error>> {
 		const LIST_GROWTH_INCREMENT_SIZE:usize = 4096;
 
 		// Validate arguments.
@@ -89,7 +89,7 @@ impl<AddressType:AddressSourceType + PartialEq + PartialOrd> ProcessMemoryManipu
 	}
 
 	/// Re-scan for a value with a filter on the current and previous value.
-	fn re_scan<ValueType:MemoryDataType + Copy, ValueFilter:Fn(&ValueType, &ValueType) -> bool>(&mut self, filter:ValueFilter, previous_results:&MemoryScanResult<AddressType, ValueType>, snapshot:&MemorySnapshot<AddressType>) -> Result<MemoryScanResult<AddressType, ValueType>, Box<dyn Error>> {
+	pub fn re_scan<ValueType:MemoryDataType + Copy, ValueFilter:Fn(&ValueType, &ValueType) -> bool>(&mut self, filter:ValueFilter, previous_results:&MemoryScanResult<AddressType, ValueType>, snapshot:&MemorySnapshot<AddressType>) -> Result<MemoryScanResult<AddressType, ValueType>, Box<dyn Error>> {
 		const LIST_GROWTH_INCREMENT_SIZE:usize = 4096;
 
 		// Validate arguments.
