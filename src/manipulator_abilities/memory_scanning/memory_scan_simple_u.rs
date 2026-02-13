@@ -1,9 +1,8 @@
 #[cfg(test)]
 mod tests {
-	use std::i32;
-
-use crate::{ MemoryDataType, MemoryScanResult, ProcessMemoryManipulator, ProcessMemoryManipulator64, active_process_name };
+	use crate::{ MemoryDataType, MemoryScanResult, ProcessMemoryManipulator, ProcessMemoryManipulator64, active_process_name };
 	use mini_rand::RandomNumber;
+	use std::i32;
 
 
 
