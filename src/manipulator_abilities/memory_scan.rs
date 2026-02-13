@@ -1,5 +1,5 @@
 use crate::{ AddressSourceType, MemoryDataType, MemorySnapshot, ProcessMemoryManipulator };
-use std::{ ptr, ops::Range, error::Error };
+use std::{ error::Error, ops::{Range, Sub}, ptr };
 
 
 
@@ -7,6 +7,13 @@ pub struct MemoryScanResult<AddressType:AddressSourceType, ValueType:MemoryDataT
 	results:Vec<(AddressType, ValueType)>
 }
 impl<AddressType:AddressSourceType, ValueType:MemoryDataType> MemoryScanResult<AddressType, ValueType> {
+
+	/// Create a new results.
+	pub fn new(results:Vec<(AddressType, ValueType)>) -> MemoryScanResult<AddressType, ValueType> {
+		MemoryScanResult {
+			results
+		}
+	}
 
 	/// Get the results of the scan.
 	pub fn results(&self) -> &[(AddressType, ValueType)] {
@@ -21,15 +28,90 @@ impl<AddressType:AddressSourceType + PartialEq + PartialOrd> ProcessMemoryManipu
 	/* SIMPLIFIED SCAN METHODS */
 
 	/// Scan the memory for a specific value.
-	pub fn scan_exact_value<ValueType:MemoryDataType + Copy + PartialEq + 'static>(&mut self, value:ValueType) -> Result<MemoryScanResult<AddressType, ValueType>, Box<dyn Error>> {
+	pub fn scan_value_exact<ValueType:MemoryDataType + PartialEq + 'static>(&mut self, value:ValueType) -> Result<MemoryScanResult<AddressType, ValueType>, Box<dyn Error>> {
 		let snapshot:MemorySnapshot<AddressType> = self.create_memory_snapshot("", None)?;
 		self.scan(move |found_value| found_value == &value, &snapshot)
 	}
 
+	/// Scan the memory for a value in a specific range.
+	pub fn scan_value_between<ValueType:MemoryDataType + PartialOrd + 'static>(&mut self, value_range:Range<ValueType>) -> Result<MemoryScanResult<AddressType, ValueType>, Box<dyn Error>> {
+		let snapshot:MemorySnapshot<AddressType> = self.create_memory_snapshot("", None)?;
+		self.scan(move |found_value| found_value >= &value_range.start && found_value < &value_range.end, &snapshot)
+	}
+
+	/// Scan the memory for a value less than the given number.
+	pub fn scan_value_less_than<ValueType:MemoryDataType + PartialOrd + 'static>(&mut self, value:ValueType) -> Result<MemoryScanResult<AddressType, ValueType>, Box<dyn Error>> {
+		let snapshot:MemorySnapshot<AddressType> = self.create_memory_snapshot("", None)?;
+		self.scan(move |found_value| *found_value < value, &snapshot)
+	}
+
+	/// Scan the memory for a value greater than the given number.
+	pub fn scan_value_greater_than<ValueType:MemoryDataType + PartialOrd + 'static>(&mut self, value:ValueType) -> Result<MemoryScanResult<AddressType, ValueType>, Box<dyn Error>> {
+		let snapshot:MemorySnapshot<AddressType> = self.create_memory_snapshot("", None)?;
+		self.scan(move |found_value| *found_value > value, &snapshot)
+	}
+
+
+
 	/// Re-scan the memory for a specific value.
-	pub fn re_scan_exact_value<ValueType:MemoryDataType + Copy + PartialEq + 'static>(&mut self, value:ValueType, previous_results:&MemoryScanResult<AddressType, ValueType>) -> Result<MemoryScanResult<AddressType, ValueType>, Box<dyn Error>> {
+	pub fn re_scan_value_exact<ValueType:MemoryDataType + Copy + PartialEq + 'static>(&mut self, value:ValueType, previous_results:&MemoryScanResult<AddressType, ValueType>) -> Result<MemoryScanResult<AddressType, ValueType>, Box<dyn Error>> {
 		let snapshot:MemorySnapshot<AddressType> = self.create_memory_snapshot("", None)?;
 		self.re_scan(move |found_value, _previous_found_value| found_value == &value, previous_results, &snapshot)
+	}
+
+	/// Re-scan the memory for a value in a specific range.
+	pub fn re_scan_value_between<ValueType:MemoryDataType + PartialOrd + 'static>(&mut self, value_range:Range<ValueType>, previous_results:&MemoryScanResult<AddressType, ValueType>) -> Result<MemoryScanResult<AddressType, ValueType>, Box<dyn Error>> {
+		let snapshot:MemorySnapshot<AddressType> = self.create_memory_snapshot("", None)?;
+		self.re_scan(move |found_value, _previous_found_value| found_value >= &value_range.start && found_value < &value_range.end, previous_results, &snapshot)
+	}
+
+	/// Re-scan the memory for a value less than the given number.
+	pub fn re_scan_value_less_than<ValueType:MemoryDataType + PartialOrd + 'static>(&mut self, value:ValueType, previous_results:&MemoryScanResult<AddressType, ValueType>) -> Result<MemoryScanResult<AddressType, ValueType>, Box<dyn Error>> {
+		let snapshot:MemorySnapshot<AddressType> = self.create_memory_snapshot("", None)?;
+		self.re_scan(move |found_value, _previous_found_value| found_value < &value, previous_results, &snapshot)
+	}
+
+	/// Re-scan the memory for a value greater than the given number.
+	pub fn re_scan_value_greater_than<ValueType:MemoryDataType + PartialOrd + 'static>(&mut self, value:ValueType, previous_results:&MemoryScanResult<AddressType, ValueType>) -> Result<MemoryScanResult<AddressType, ValueType>, Box<dyn Error>> {
+		let snapshot:MemorySnapshot<AddressType> = self.create_memory_snapshot("", None)?;
+		self.re_scan(move |found_value, _previous_found_value| *found_value > value, previous_results, &snapshot)
+	}
+
+	/// Re-scan the memory for any values that are the same as they previously were.
+	pub fn re_scan_value_unchanged<ValueType:MemoryDataType + PartialEq + 'static>(&mut self, previous_results:&MemoryScanResult<AddressType, ValueType>) -> Result<MemoryScanResult<AddressType, ValueType>, Box<dyn Error>> {
+		let snapshot:MemorySnapshot<AddressType> = self.create_memory_snapshot("", None)?;
+		self.re_scan(move |found_value, previous_found_value| found_value == previous_found_value, previous_results, &snapshot)
+	}
+
+	/// Re-scan the memory for any values that are not the same as they previously were.
+	pub fn re_scan_value_changed<ValueType:MemoryDataType + PartialEq + 'static>(&mut self, previous_results:&MemoryScanResult<AddressType, ValueType>) -> Result<MemoryScanResult<AddressType, ValueType>, Box<dyn Error>> {
+		let snapshot:MemorySnapshot<AddressType> = self.create_memory_snapshot("", None)?;
+		self.re_scan(move |found_value, previous_found_value| found_value != previous_found_value, previous_results, &snapshot)
+	}
+
+	/// Re-scan the memory for any values that have increased since last scan.
+	pub fn re_scan_value_increased<ValueType:MemoryDataType + PartialOrd + 'static>(&mut self, previous_results:&MemoryScanResult<AddressType, ValueType>) -> Result<MemoryScanResult<AddressType, ValueType>, Box<dyn Error>> {
+		let snapshot:MemorySnapshot<AddressType> = self.create_memory_snapshot("", None)?;
+		self.re_scan(move |found_value, previous_found_value| found_value > previous_found_value, previous_results, &snapshot)
+	}
+
+	/// Re-scan the memory for any values that have increased by a certain amount since last scan.
+	pub fn re_scan_value_increased_by<ValueType:MemoryDataType + PartialOrd + Sub<Output=ValueType> + 'static>(&mut self, increased_amount:ValueType, previous_results:&MemoryScanResult<AddressType, ValueType>) -> Result<MemoryScanResult<AddressType, ValueType>, Box<dyn Error>> {
+		let snapshot:MemorySnapshot<AddressType> = self.create_memory_snapshot("", None)?;
+		self.re_scan(move |found_value, previous_found_value| found_value > &increased_amount && (*found_value - increased_amount) == *previous_found_value, previous_results, &snapshot)
+	}
+
+	/// Re-scan the memory for any values that have decreased since last scan.
+	pub fn re_scan_value_decreased<ValueType:MemoryDataType + PartialOrd + 'static>(&mut self, previous_results:&MemoryScanResult<AddressType, ValueType>) -> Result<MemoryScanResult<AddressType, ValueType>, Box<dyn Error>> {
+		let snapshot:MemorySnapshot<AddressType> = self.create_memory_snapshot("", None)?;
+		self.re_scan(move |found_value, previous_found_value| found_value < previous_found_value, previous_results, &snapshot)
+	}
+
+	/// Re-scan the memory for any values that have increased by a certain amount since last scan.
+	pub fn re_scan_value_decreased_by<ValueType:MemoryDataType + PartialOrd + Sub<Output=ValueType> + 'static>(&mut self, increased_amount:ValueType, previous_results:&MemoryScanResult<AddressType, ValueType>) -> Result<MemoryScanResult<AddressType, ValueType>, Box<dyn Error>> {
+		let snapshot:MemorySnapshot<AddressType> = self.create_memory_snapshot("", None)?;
+		let pre_filtered_results:MemoryScanResult<AddressType, ValueType> = MemoryScanResult::new(previous_results.results.iter().filter(|(_address, value)| value > &increased_amount).cloned().collect());
+		self.re_scan(move |found_value, previous_found_value| (*previous_found_value - increased_amount) == *found_value, &pre_filtered_results, &snapshot)
 	}
 
 
@@ -37,13 +119,13 @@ impl<AddressType:AddressSourceType + PartialEq + PartialOrd> ProcessMemoryManipu
 	/* RAW SCAN METHODS */
 
 	/// Scan for a value with a value filter.
-	pub fn scan<ValueType:MemoryDataType + Copy, ValueFilter:Fn(&ValueType) -> bool>(&mut self, value_filter:ValueFilter, snapshot:&MemorySnapshot<AddressType>) -> Result<MemoryScanResult<AddressType, ValueType>, Box<dyn Error>> {
+	pub fn scan<ValueType:MemoryDataType, ValueFilter:Fn(&ValueType) -> bool>(&mut self, value_filter:ValueFilter, snapshot:&MemorySnapshot<AddressType>) -> Result<MemoryScanResult<AddressType, ValueType>, Box<dyn Error>> {
 		const LIST_GROWTH_INCREMENT_SIZE:usize = 4096;
 
 		// Validate arguments.
 		let arguments_invalid:bool = snapshot.address_ranges().is_empty();
 		if arguments_invalid {
-			return Ok(MemoryScanResult { results: Vec::new() });
+			return Ok(MemoryScanResult::new(Vec::new()));
 		}
 
 		// Create a short-hand bytes to value casting function.
@@ -85,17 +167,17 @@ impl<AddressType:AddressSourceType + PartialEq + PartialOrd> ProcessMemoryManipu
 		}
 
 		// Return results.
-		Ok(MemoryScanResult { results })
+		Ok(MemoryScanResult::new(results))
 	}
 
 	/// Re-scan for a value with a filter on the current and previous value.
-	pub fn re_scan<ValueType:MemoryDataType + Copy, ValueFilter:Fn(&ValueType, &ValueType) -> bool>(&mut self, filter:ValueFilter, previous_results:&MemoryScanResult<AddressType, ValueType>, snapshot:&MemorySnapshot<AddressType>) -> Result<MemoryScanResult<AddressType, ValueType>, Box<dyn Error>> {
+	pub fn re_scan<ValueType:MemoryDataType, ValueFilter:Fn(&ValueType, &ValueType) -> bool>(&mut self, filter:ValueFilter, previous_results:&MemoryScanResult<AddressType, ValueType>, snapshot:&MemorySnapshot<AddressType>) -> Result<MemoryScanResult<AddressType, ValueType>, Box<dyn Error>> {
 		const LIST_GROWTH_INCREMENT_SIZE:usize = 4096;
 
 		// Validate arguments.
 		let arguments_invalid:bool = snapshot.address_ranges().is_empty() || previous_results.results.is_empty();
 		if arguments_invalid {
-			return Ok(MemoryScanResult { results: Vec::new() });
+			return Ok(MemoryScanResult::new(Vec::new()));
 		}
 
 		// Create a short-hand bytes to value casting function.
@@ -137,6 +219,6 @@ impl<AddressType:AddressSourceType + PartialEq + PartialOrd> ProcessMemoryManipu
 			}
 
 		}
-		Ok(MemoryScanResult { results })
+		Ok(MemoryScanResult::new(results))
 	}
 }
