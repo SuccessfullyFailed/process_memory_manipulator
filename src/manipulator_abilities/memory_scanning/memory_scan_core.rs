@@ -3,6 +3,10 @@ use std::{ ptr, error::Error, ops::Range };
 
 
 
+const RESULTS_LIST_GROWTH_SIZE:usize = 4096;
+
+
+
 pub struct MemoryScanResult<AddressType:AddressSourceType, ValueType:MemoryDataType> {
 	pub(crate) results:Vec<(AddressType, ValueType)>
 }
@@ -33,11 +37,9 @@ impl<AddressType:AddressSourceType + PartialEq + PartialOrd> ProcessMemoryManipu
 
 	/// Scan for a value with a value filter and the given snapshot.
 	pub fn scan_with_snapshot<ValueType:MemoryDataType, ValueFilter:Fn(&ValueType) -> bool>(&mut self, value_filter:ValueFilter, snapshot:&MemorySnapshot<AddressType>) -> Result<MemoryScanResult<AddressType, ValueType>, Box<dyn Error>> {
-		const LIST_GROWTH_INCREMENT_SIZE:usize = 4096;
 
-		// Validate arguments.
-		let arguments_invalid:bool = snapshot.address_ranges().is_empty();
-		if arguments_invalid {
+		// Skip scanning if address ranges are empty.
+		if snapshot.address_ranges().is_empty() {
 			return Ok(MemoryScanResult::new(Vec::new()));
 		}
 
@@ -51,8 +53,8 @@ impl<AddressType:AddressSourceType + PartialEq + PartialOrd> ProcessMemoryManipu
 		};
 
 		// Loop through addresses ranges of the snapshot.
-		let mut results:Vec<(AddressType, ValueType)> = Vec::with_capacity(LIST_GROWTH_INCREMENT_SIZE);
-		let mut results_remaining_capacity:usize = LIST_GROWTH_INCREMENT_SIZE;
+		let mut results:Vec<(AddressType, ValueType)> = Vec::with_capacity(RESULTS_LIST_GROWTH_SIZE);
+		let mut results_remaining_capacity:usize = RESULTS_LIST_GROWTH_SIZE;
 		for (address_range, bytes_block) in snapshot.address_ranges() {
 			let block_bytes:Vec<u8> = bytes_block.get_bytes()?;
 			let block_size:usize = block_bytes.len();
@@ -70,18 +72,19 @@ impl<AddressType:AddressSourceType + PartialEq + PartialOrd> ProcessMemoryManipu
 						results.push((address_range.start + AddressType::from_usize(offset), value.clone()));
 						results_remaining_capacity -= 1;
 						if results_remaining_capacity == 0 {
-							results.reserve(LIST_GROWTH_INCREMENT_SIZE);
-							results_remaining_capacity = LIST_GROWTH_INCREMENT_SIZE;
+							results.reserve(RESULTS_LIST_GROWTH_SIZE);
+							results_remaining_capacity = RESULTS_LIST_GROWTH_SIZE;
 						}
 					}
 				}
 			}
-			drop(block_bytes);
 		}
 
 		// Return results.
 		Ok(MemoryScanResult::new(results))
 	}
+
+
 
 	/// Re-scan for a value with a filter on the current and previous value.
 	pub fn re_scan<ValueType:MemoryDataType, ValueFilter:Fn(&ValueType, &ValueType) -> bool>(&mut self, value_filter:ValueFilter, previous_results:&MemoryScanResult<AddressType, ValueType>) -> Result<MemoryScanResult<AddressType, ValueType>, Box<dyn Error>> {
@@ -91,11 +94,9 @@ impl<AddressType:AddressSourceType + PartialEq + PartialOrd> ProcessMemoryManipu
 
 	/// Re-scan for a value with a filter on the current and previous value and a snapshot.
 	pub fn re_scan_with_snapshot<ValueType:MemoryDataType, ValueFilter:Fn(&ValueType, &ValueType) -> bool>(&mut self, value_filter:ValueFilter, previous_results:&MemoryScanResult<AddressType, ValueType>, snapshot:&MemorySnapshot<AddressType>) -> Result<MemoryScanResult<AddressType, ValueType>, Box<dyn Error>> {
-		const LIST_GROWTH_INCREMENT_SIZE:usize = 4096;
 
-		// Validate arguments.
-		let arguments_invalid:bool = snapshot.address_ranges().is_empty() || previous_results.results.is_empty();
-		if arguments_invalid {
+		// Skip scanning if address ranges are empty.
+		if snapshot.address_ranges().is_empty() {
 			return Ok(MemoryScanResult::new(Vec::new()));
 		}
 
@@ -109,8 +110,8 @@ impl<AddressType:AddressSourceType + PartialEq + PartialOrd> ProcessMemoryManipu
 		};
 
 		// Loop through previous results, caching the current snapshot block.
-		let mut results:Vec<(AddressType, ValueType)> = Vec::with_capacity(LIST_GROWTH_INCREMENT_SIZE);
-		let mut results_remaining_capacity:usize = LIST_GROWTH_INCREMENT_SIZE;
+		let mut results:Vec<(AddressType, ValueType)> = Vec::with_capacity(RESULTS_LIST_GROWTH_SIZE);
+		let mut results_remaining_capacity:usize = RESULTS_LIST_GROWTH_SIZE;
 		let mut cached_bytes_block:(Range<AddressType>, Vec<u8>, *const ValueType::Bytes) = (AddressType::default()..AddressType::default(), Vec::new(), ptr::null());
 		for (address, previous_value) in &previous_results.results {
 
@@ -132,8 +133,8 @@ impl<AddressType:AddressSourceType + PartialEq + PartialOrd> ProcessMemoryManipu
 				results.push((*address, value));
 				results_remaining_capacity -= 1;
 				if results_remaining_capacity == 0 {
-					results.reserve(LIST_GROWTH_INCREMENT_SIZE);
-					results_remaining_capacity = LIST_GROWTH_INCREMENT_SIZE;
+					results.reserve(RESULTS_LIST_GROWTH_SIZE);
+					results_remaining_capacity = RESULTS_LIST_GROWTH_SIZE;
 				}
 			}
 
