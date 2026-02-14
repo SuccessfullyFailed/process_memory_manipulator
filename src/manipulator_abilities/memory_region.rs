@@ -1,4 +1,4 @@
-use winapi::{ ctypes::c_void, um::{ errhandlingapi::GetLastError, memoryapi::{ VirtualAllocEx, VirtualQueryEx }, winnt::{ HANDLE as WinHandle, MEM_COMMIT, MEM_RESERVE, MEMORY_BASIC_INFORMATION, PAGE_EXECUTE_READ, PAGE_EXECUTE_READWRITE, PAGE_EXECUTE_WRITECOPY, PAGE_READONLY, PAGE_READWRITE, PAGE_WRITECOPY } } };
+use winapi::{ ctypes::c_void, um::{ errhandlingapi::GetLastError, memoryapi::{ VirtualAllocEx, VirtualQueryEx }, winnt::{ HANDLE as WinHandle, MEM_COMMIT, MEM_FREE, MEM_RESERVE, MEMORY_BASIC_INFORMATION, PAGE_EXECUTE_READ, PAGE_EXECUTE_READWRITE, PAGE_EXECUTE_WRITECOPY, PAGE_READONLY, PAGE_READWRITE, PAGE_WRITECOPY } } };
 use crate::{ AddressSourceType, MemoryAccessToken, ProcessMemoryManipulator };
 use std::{ error::Error, mem };
 
@@ -54,15 +54,35 @@ impl<AddressType:AddressSourceType> MemoryRegion<AddressType> {
 impl<AddressType:AddressSourceType> ProcessMemoryManipulator<AddressType> {
 
 	/// Allocate new memory of the given size.
-	pub fn allocate_memory(&mut self, size:AddressType) -> Result<AddressType, Box<dyn Error>> {
-		self.allocate_memory_after(size, AddressType::default())
+	pub fn allocate_memory(&mut self, size:AddressType) -> Result<AddressType, Box<dyn Error>> where AddressType:PartialOrd {
+		self.allocate_memory_at(size, AddressType::default())
 	}
 
-	/// Allocate new memory of the given size after the given address.
-	pub fn allocate_memory_after(&mut self, size:AddressType, start_address:AddressType) -> Result<AddressType, Box<dyn Error>> {
+	/// Allocate new memory of the given size near the given address.
+	pub fn allocate_memory_near(&mut self, size:AddressType, target_address:AddressType) -> Result<AddressType, Box<dyn Error>> where AddressType:PartialOrd {
+		let regions:Vec<MemoryRegion<AddressType>> = self.memory_regions()?;
+		let mut closest:Option<(usize, AddressType)> = None;
+		for (region_index, region) in regions.iter().enumerate() {
+			if region.base_address > target_address && region.state & MEM_FREE == MEM_FREE {
+				let offset:AddressType = if region.base_address < target_address { target_address - region.base_address } else { region.base_address };
+				let is_closest:bool = closest.as_ref().map(|(_, closest_offset)| &offset < closest_offset).unwrap_or(true);
+				if is_closest {
+					closest = Some((region_index, offset));
+				}
+			}
+		}
+
+		match closest {
+			Some((closest_region_index, _)) => self.allocate_memory_at(size, regions[closest_region_index].base_address),
+			None => Err("Could not find suitable place to allocate memory.".into())
+		}
+	}
+
+	/// Allocate new memory of the given size at the given address. Will try to allocate anywhere when the address is 0.
+	pub fn allocate_memory_at(&mut self, size:AddressType, target_address:AddressType) -> Result<AddressType, Box<dyn Error>> where AddressType:PartialOrd {
 		const ALLOCATE_ACCESS:MemoryAccessToken = MemoryAccessToken::PROCESS_VM_OPERATION;
 
-		let remote_buffer:u64 = unsafe { VirtualAllocEx(self.win_handle(ALLOCATE_ACCESS)?, start_address.to_c_void_ptr_mut(), size.to_usize(), MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE) as u64 };
+		let remote_buffer:u64 = unsafe { VirtualAllocEx(self.win_handle(ALLOCATE_ACCESS)?, target_address.to_c_void_ptr_mut(), size.to_usize(), MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE) as u64 };
 		if remote_buffer == 0 {
 		  	Err(format!("Failed to allocate memory in the remote process. Error code: '{}'.", unsafe { GetLastError() }).into())
 		} else {
