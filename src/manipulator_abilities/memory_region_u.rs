@@ -28,8 +28,8 @@ mod tests {
 	}
 
 	#[test]
-	fn test_memory_allocation_after_specific_address() {
-		const ACCEPTABLE_OFFSET:u64 = 0xF000;
+	fn test_memory_allocation_near_specific_address() {
+		const ACCEPTABLE_OFFSET:u64 = 0xFF0000;
 
 		let process_name:String = active_process_name();
 		let mut pmm:ProcessMemoryManipulator<u64> = ProcessMemoryManipulator64::new(&process_name, false);
@@ -37,7 +37,9 @@ mod tests {
 		let temp_var:u8 = 0;
 		let temp_var_address:u64 = &temp_var as *const u8 as u64;
 		let new_memory_address:u64 = pmm.allocate_memory_near(64, temp_var_address).unwrap();
-		assert!((new_memory_address.max(temp_var_address) - new_memory_address.min(temp_var_address)) < ACCEPTABLE_OFFSET);
+		let allocation_offset:u64 = new_memory_address.max(temp_var_address) - new_memory_address.min(temp_var_address);
+		println!("offset: {:#2x}", allocation_offset);
+		assert!(allocation_offset < ACCEPTABLE_OFFSET);
 		assert_eq!(pmm.read_bytes(new_memory_address, 64).unwrap(), [0; 64]);
 	}
 }

@@ -83,6 +83,7 @@ pub trait AddressSourceType:Debug + Display + Default + LowerHex + Copy + Partia
 	fn to_c_void_ptr_mut(&self) -> *mut c_void;
 	fn from_u64(address:u64) -> Self;
 	fn from_usize(address:usize) -> Self;
+	fn wrapping_sub(self, address:Self) -> Self;
 }
 impl AddressSourceType for u64 {
 	fn to_usize(&self) -> usize {
@@ -100,6 +101,9 @@ impl AddressSourceType for u64 {
 	fn from_usize(address:usize) -> Self {
 		address as u64
 	}
+	fn wrapping_sub(self, address:Self) -> Self {
+		u64::wrapping_sub(self, address)
+	}
 }
 impl AddressSourceType for u32 {
 	fn to_usize(&self) -> usize {
@@ -116,5 +120,8 @@ impl AddressSourceType for u32 {
 	}
 	fn from_usize(address:usize) -> Self {
 		address as u32
+	}
+	fn wrapping_sub(self, address:Self) -> Self {
+		u32::wrapping_sub(self, address)
 	}
 }
