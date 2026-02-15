@@ -134,7 +134,7 @@ impl<AddressType:AddressSourceType> AOBInjection<AddressType> {
 
 							// Create memory for reroute.
 							let required_memory:usize = (((replace_pattern_len + 5) / 8) + 1) * 8; // Replacement bytes + jump command (5) rounded by 8-bytes
-							let reroute_address:AddressType = pmm.allocate_memory_near(AddressType::from_usize(required_memory), injection_address)?;
+							let reroute_address:AddressType = pmm.allocate_memory_near(AddressType::from_usize(required_memory), injection_address, AddressType::two_gb())?;
 							self.reroute_injection_address = Some(reroute_address.clone());
 
 							// Create external function.

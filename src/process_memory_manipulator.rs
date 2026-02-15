@@ -1,4 +1,4 @@
-use std::{ error::Error, fmt::{ Debug, Display, LowerHex }, ops::{Add, Sub} };
+use std::{ error::Error, fmt::{ Debug, Display, LowerHex }, ops::{Add, AddAssign, Sub, SubAssign} };
 use winapi::{ ctypes::c_void, um::{ winnt::HANDLE as WinHandle } };
 use crate::{ MemoryAccessToken, ProcessHandle };
 
@@ -77,13 +77,14 @@ impl<AddressType:AddressSourceType> ProcessMemoryManipulator<AddressType> {
 
 
 
-pub trait AddressSourceType:Debug + Display + Default + LowerHex + Copy + PartialEq + Add<Output=Self> + Sub<Output=Self> {
+pub trait AddressSourceType:Debug + Display + Default + LowerHex + Copy + PartialEq + Add<Output=Self> + AddAssign + Sub<Output=Self> + SubAssign {
 	fn to_usize(&self) -> usize;
 	fn to_c_void_ptr(&self) -> *const c_void;
 	fn to_c_void_ptr_mut(&self) -> *mut c_void;
 	fn from_u64(address:u64) -> Self;
 	fn from_usize(address:usize) -> Self;
 	fn wrapping_sub(self, address:Self) -> Self;
+	fn two_gb() -> Self;
 }
 impl AddressSourceType for u64 {
 	fn to_usize(&self) -> usize {
@@ -104,6 +105,10 @@ impl AddressSourceType for u64 {
 	fn wrapping_sub(self, address:Self) -> Self {
 		u64::wrapping_sub(self, address)
 	}
+	fn two_gb() -> Self {
+		const BYTES:u64 = 2 * 1024 * 1024 * 1024;
+		BYTES
+	}
 }
 impl AddressSourceType for u32 {
 	fn to_usize(&self) -> usize {
@@ -123,5 +128,9 @@ impl AddressSourceType for u32 {
 	}
 	fn wrapping_sub(self, address:Self) -> Self {
 		u32::wrapping_sub(self, address)
+	}
+	fn two_gb() -> Self {
+		const BYTES:u32 = 2 * 1024 * 1024 * 1024;
+		BYTES
 	}
 }

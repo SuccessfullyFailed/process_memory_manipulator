@@ -1,4 +1,4 @@
-use winapi::{ ctypes::c_void, um::{ errhandlingapi::GetLastError, memoryapi::{ VirtualAllocEx, VirtualQueryEx }, winnt::{ HANDLE as WinHandle, MEM_COMMIT, MEM_FREE, MEM_RESERVE, MEMORY_BASIC_INFORMATION, PAGE_EXECUTE_READ, PAGE_EXECUTE_READWRITE, PAGE_EXECUTE_WRITECOPY, PAGE_READONLY, PAGE_READWRITE, PAGE_WRITECOPY } } };
+use winapi::{ um::{ errhandlingapi::GetLastError, memoryapi::{ VirtualAllocEx, VirtualQueryEx }, winnt::{ HANDLE as WinHandle, MEM_COMMIT, MEM_FREE, MEM_RESERVE, MEMORY_BASIC_INFORMATION, PAGE_EXECUTE_READ, PAGE_EXECUTE_READWRITE, PAGE_EXECUTE_WRITECOPY, PAGE_READONLY, PAGE_READWRITE, PAGE_WRITECOPY } } };
 use crate::{ AddressSourceType, MemoryAccessToken, ProcessMemoryManipulator };
 use std::{ error::Error, mem };
 
@@ -59,23 +59,23 @@ impl<AddressType:AddressSourceType> ProcessMemoryManipulator<AddressType> {
 	}
 
 	/// Allocate new memory of the given size near the given address.
-	pub fn allocate_memory_near(&mut self, size:AddressType, target_address:AddressType) -> Result<AddressType, Box<dyn Error>> where AddressType:PartialOrd {
-		let regions:Vec<MemoryRegion<AddressType>> = self.memory_regions()?;
-		let mut closest:Option<(usize, AddressType)> = None;
-		for (region_index, region) in regions.iter().enumerate() {
-			if region.base_address > target_address && region.state & MEM_FREE == MEM_FREE {
-				let offset:AddressType = if region.base_address < target_address { target_address - region.base_address } else { region.base_address };
-				let is_closest:bool = closest.as_ref().map(|(_, closest_offset)| &offset < closest_offset).unwrap_or(true);
-				if is_closest {
-					closest = Some((region_index, offset));
+	pub fn allocate_memory_near(&mut self, size:AddressType, target_address:AddressType, max_allowed_offset:AddressType) -> Result<AddressType, Box<dyn Error>> where AddressType:PartialOrd {
+		let min_address:AddressType = if target_address > max_allowed_offset { target_address - max_allowed_offset } else { AddressType::default() };
+		let max_address:AddressType = target_address + max_allowed_offset;
+		let mut address:AddressType = min_address;
+		while let Ok(region) = self.memory_region_at(address) {
+			if region.base_address >= min_address && region.state == MEM_FREE {
+				if let Ok(allocated_address) = self.allocate_memory_at(size, region.base_address) {
+					return Ok(allocated_address);
 				}
+			}
+			address += region.size;
+			if address > max_address {
+				break;
 			}
 		}
 
-		match closest {
-			Some((closest_region_index, _)) => self.allocate_memory_at(size, regions[closest_region_index].base_address),
-			None => Err("Could not find suitable place to allocate memory.".into())
-		}
+		Err("Could not allocate memory within given bounds.".into())
 	}
 
 	/// Allocate new memory of the given size at the given address. Will try to allocate anywhere when the address is 0.
@@ -90,25 +90,37 @@ impl<AddressType:AddressSourceType> ProcessMemoryManipulator<AddressType> {
 		}
 	}
 
-	/// Get all memory regions.
-	pub fn memory_regions(&mut self) -> Result<Vec<MemoryRegion<AddressType>>, Box<dyn Error>> {	
-		const MEMORY_REGION_FETCH_ACCESS:MemoryAccessToken = MemoryAccessToken::PROCESS_QUERY_INFORMATION;
 
+
+	/// Get all memory regions.
+	pub fn memory_regions(&mut self) -> Result<Vec<MemoryRegion<AddressType>>, Box<dyn Error>> {
+		let mut address:AddressType = AddressType::default();
+		let mut results:Vec<MemoryRegion<AddressType>> = Vec::new();
+		while let Ok(region) = self.memory_region_at(address) {
+			address += region.size;
+			results.push(region);
+		}
+		Ok(results)
+	}
+
+	/// Get the memory region at a specific address.
+	pub fn memory_region_at(&mut self, address:AddressType) -> Result<MemoryRegion<AddressType>, Box<dyn Error>> {
+		const MEMORY_REGION_FETCH_ACCESS:MemoryAccessToken = MemoryAccessToken::PROCESS_QUERY_INFORMATION;
+		
 		unsafe {
 			let process_handle:WinHandle = self.win_handle(MEMORY_REGION_FETCH_ACCESS)?;
-			let mut address:usize = 0;
-			let mut results:Vec<MemoryRegion<AddressType>> = Vec::new();
-			let mut mbi:MEMORY_BASIC_INFORMATION = mem::zeroed();
-			while VirtualQueryEx(process_handle, address as *const c_void, &mut mbi, mem::size_of::<MEMORY_BASIC_INFORMATION>()) != 0 {
-				results.push(MemoryRegion {
-					base_address: AddressType::from_u64(mbi.BaseAddress as u64),
-					size: AddressType::from_u64(mbi.RegionSize as u64),
-					state: mbi.State,
-					protection: mbi.Protect
-				});
-				address += mbi.RegionSize;
+			let mut memory_basic_information:MEMORY_BASIC_INFORMATION = mem::zeroed();
+			let query_result:usize = VirtualQueryEx(process_handle, address.to_c_void_ptr(), &mut memory_basic_information, mem::size_of::<MEMORY_BASIC_INFORMATION>());
+			if query_result == 0 {
+		  		Err(format!("Failed to get memory region at address {:#x}. Error code: '{}'.", address, GetLastError()).into())
+			} else {
+				Ok(MemoryRegion {
+					base_address: AddressType::from_u64(memory_basic_information.BaseAddress as u64),
+					size: AddressType::from_u64(memory_basic_information.RegionSize as u64),
+					state: memory_basic_information.State,
+					protection: memory_basic_information.Protect
+				})
 			}
-			Ok(results)
 		}
 	}
 }
