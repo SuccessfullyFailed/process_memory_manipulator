@@ -186,6 +186,17 @@ mod tests {
 	}
 
 	#[test]
+	fn test_aob_jmp_creation() {
+		assert_eq!(AOBInjection::relative_direct_jmp(10_u32, 100_u32), vec![vec![0xE9], 85_i32.to_le_bytes().to_vec()].into_iter().flatten().collect::<Vec<u8>>());
+		assert_eq!(AOBInjection::relative_direct_jmp(100_u32, 10_u32), vec![vec![0xE9], (-95_i32).to_le_bytes().to_vec()].into_iter().flatten().collect::<Vec<u8>>());
+		assert_eq!(AOBInjection::absolute_indirect_jmp(910_u32), vec![vec![0xFF, 0x25, 0x00, 0x00, 0x00, 0x00], 910_u64.to_le_bytes().to_vec()].into_iter().flatten().collect::<Vec<u8>>());
+		
+		assert_eq!(AOBInjection::relative_direct_jmp(10_u64, 100_u64), vec![vec![0xE9], 85_i32.to_le_bytes().to_vec()].into_iter().flatten().collect::<Vec<u8>>());
+		assert_eq!(AOBInjection::relative_direct_jmp(100_u64, 10_u64), vec![vec![0xE9], (-95_i32).to_le_bytes().to_vec()].into_iter().flatten().collect::<Vec<u8>>());
+		assert_eq!(AOBInjection::absolute_indirect_jmp(910_u64), vec![vec![0xFF, 0x25, 0x00, 0x00, 0x00, 0x00], 910_u64.to_le_bytes().to_vec()].into_iter().flatten().collect::<Vec<u8>>());
+	}
+
+	#[test]
 	fn test_aob_injection_large_replacement() {
 		let process_name:String = active_process_name();
 		let mut pmm:ProcessMemoryManipulator<u64> = ProcessMemoryManipulator64::new(&process_name, false);
@@ -221,6 +232,6 @@ mod tests {
 		assert_eq!(reroute_trail[0], 0xE9);
 		let reroute_back_offset:i32 = i32::from_le_bytes(reroute_trail[1..].try_into().unwrap());
 		let reroute_back_target_address:u64 = ((reroute_trail_address + 5) as i64 + reroute_back_offset as i64) as u64;
-		assert_eq!(reroute_back_target_address + 5, random_instructions_address + 5);
+		assert_eq!(reroute_back_target_address, random_instructions_address + random_instructions.len() as u64);
 	}
 }
