@@ -1,8 +1,8 @@
 #[cfg(test)]
 mod tests {
 	use crate::{ MemoryDataType, MemoryScanResult, ProcessMemoryManipulator, ProcessMemoryManipulator64, active_process_name };
+	use std::{ thread::sleep, time::Duration };
 	use mini_rand::RandomNumber;
-	use std::i32;
 
 
 
@@ -88,57 +88,67 @@ mod tests {
 	fn test_memory_simple_scan_types() {
 		let mut hidden_value:i32 = i8::random() as i32;
 		let hidden_value_address:u64 = &hidden_value as *const i32 as u64;
+		const SHORT_SLEEP:fn() = || sleep(Duration::from_millis(1));
 
 		let process_name:String = active_process_name();
 		let mut pmm:ProcessMemoryManipulator<u64> = ProcessMemoryManipulator64::new(&process_name, false).with_thread_count(8);
 
 		println!("{}", hidden_value);
+		SHORT_SLEEP();
 		let mut scan_results:MemoryScanResult<u64, i32> = pmm.scan_value_exact(hidden_value).unwrap();
 		assert!(!scan_results.results().is_empty(), "No scan results found.");
 		assert!(scan_results.results().iter().any(|(address, value)| address == &hidden_value_address && value == &hidden_value), "Hidden value not found in scan results after 'scan_value_exact'.");
 
 		println!("{}", hidden_value);
+		SHORT_SLEEP();
 		scan_results = pmm.scan_value_between(hidden_value - 1..hidden_value + 1).unwrap();
 		assert!(!scan_results.results().is_empty(), "No scan results found.");
 		assert!(scan_results.results().iter().any(|(address, value)| address == &hidden_value_address && value == &hidden_value), "Hidden value not found in scan results after 'scan_value_between'.");
 
 		hidden_value = i32::MIN + 4;
 		println!("{}", hidden_value);
+		SHORT_SLEEP();
 		scan_results = pmm.scan_value_less_than(i32::MIN + 8).unwrap();
 		assert!(!scan_results.results().is_empty(), "No scan results found.");
 		assert!(scan_results.results().iter().any(|(address, value)| address == &hidden_value_address && value == &hidden_value), "Hidden value not found in scan results after 'scan_value_less_than'.");
 
 		hidden_value = i32::MAX - 4;
 		println!("{}", hidden_value);
+		SHORT_SLEEP();
 		scan_results = pmm.scan_value_greater_than(i32::MAX - 8).unwrap();
 		assert!(!scan_results.results().is_empty(), "No scan results found.");
 		assert!(scan_results.results().iter().any(|(address, value)| address == &hidden_value_address && value == &hidden_value), "Hidden value not found in scan results after 'scan_value_greater_than'.");
 
 		hidden_value = i8::random() as i32;
 		println!("{}", hidden_value);
+		SHORT_SLEEP();
 		scan_results = pmm.re_scan_value_between(hidden_value - 8..hidden_value + 16, scan_results).unwrap();
 		assert!(!scan_results.results().is_empty(), "No scan results found.");
 		assert!(scan_results.results().iter().any(|(address, value)| address == &hidden_value_address && value == &hidden_value), "Hidden value not found in scan results after 're_scan_value_between'.");
 
 		println!("{}", hidden_value);
+		SHORT_SLEEP();
 		scan_results = pmm.re_scan_value_unchanged(scan_results).unwrap();
 		assert!(!scan_results.results().is_empty(), "No scan results found.");
 		assert!(scan_results.results().iter().any(|(address, value)| address == &hidden_value_address && value == &hidden_value), "Hidden value not found in scan results after 're_scan_value_unchanged'.");
 
 		hidden_value += i8::random() as i32;
 		println!("{}", hidden_value);
+		SHORT_SLEEP();
 		scan_results = pmm.re_scan_value_changed(scan_results).unwrap();
 		assert!(!scan_results.results().is_empty(), "No scan results found.");
 		assert!(scan_results.results().iter().any(|(address, value)| address == &hidden_value_address && value == &hidden_value), "Hidden value not found in scan results after 're_scan_value_changed'.");
 
 		hidden_value += i8::random().abs() as i32;
 		println!("{}", hidden_value);
+		SHORT_SLEEP();
 		scan_results = pmm.re_scan_value_increased(scan_results).unwrap();
 		assert!(!scan_results.results().is_empty(), "No scan results found.");
 		assert!(scan_results.results().iter().any(|(address, value)| address == &hidden_value_address && value == &hidden_value), "Hidden value not found in scan results after 're_scan_value_increased'.");
 
 		hidden_value -= i8::random().abs() as i32;
 		println!("{}", hidden_value);
+		SHORT_SLEEP();
 		scan_results = pmm.re_scan_value_decreased(scan_results).unwrap();
 		assert!(!scan_results.results().is_empty(), "No scan results found.");
 		assert!(scan_results.results().iter().any(|(address, value)| address == &hidden_value_address && value == &hidden_value), "Hidden value not found in scan results after 're_scan_value_decreased'.");
@@ -146,6 +156,7 @@ mod tests {
 		let increase:i32 = i8::random().abs() as i32;
 		hidden_value += increase;
 		println!("{}", hidden_value);
+		SHORT_SLEEP();
 		scan_results = pmm.re_scan_value_increased_by(increase, scan_results).unwrap();
 		assert!(!scan_results.results().is_empty(), "No scan results found.");
 		assert!(scan_results.results().iter().any(|(address, value)| address == &hidden_value_address && value == &hidden_value), "Hidden value not found in scan results after 're_scan_value_increased_by'.");
@@ -153,6 +164,7 @@ mod tests {
 		let decrease:i32 = i8::random().abs() as i32;
 		hidden_value -= decrease;
 		println!("{}", hidden_value);
+		SHORT_SLEEP();
 		scan_results = pmm.re_scan_value_decreased_by(decrease, scan_results).unwrap();
 		assert!(!scan_results.results().is_empty(), "No scan results found.");
 		assert!(scan_results.results().iter().any(|(address, value)| address == &hidden_value_address && value == &hidden_value), "Hidden value not found in scan results after 're_scan_value_decreased_by'.");
