@@ -31,7 +31,7 @@ mod tests {
 		let mut scan_results:MemoryScanResult<u64, f32> = pmm.scan(move |value:&f32| value == &hidden_value).unwrap();
 		for _attempt_index in 0..MAX_ALLOWED_ATTEMPTS {
 			hidden_value = f32::random();
-			scan_results = pmm.re_scan(|value:&f32, _previous_value:&f32| value == &hidden_value, &scan_results).unwrap();
+			scan_results = pmm.re_scan(move |value:&f32, _previous_value:&f32| value == &hidden_value, scan_results).unwrap();
 			if scan_results.results().len() <= 1 {
 				break;
 			}
@@ -73,7 +73,7 @@ mod tests {
 			let previous_original_value:f32 = original_value;
 			original_value = f32::random();
 			hidden_value = original_value.mdt_flip_endian();
-			scan_results = pmm.re_scan(|value:&f32, previous_value:&f32| value == &original_value && previous_value == &previous_original_value, &scan_results).unwrap();
+			scan_results = pmm.re_scan(move |value:&f32, previous_value:&f32| value == &original_value && previous_value == &previous_original_value, scan_results).unwrap();
 			if scan_results.results().len() <= MAX_ALLOWED_RESULTS {
 				break;
 			}

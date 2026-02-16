@@ -1,5 +1,5 @@
 use crate::{ AddressSourceType, MemoryDataType, MemorySnapshot, MemorySnapshotStorage, ProcessMemoryManipulator };
-use std::{ ptr, thread, ops::Range, error::Error, sync::{ Arc, Mutex, MutexGuard } };
+use std::{ error::Error, ops::Range, ptr, sync::{ Arc, Mutex, MutexGuard }, thread::{ self, JoinHandle } };
 
 
 
@@ -56,7 +56,7 @@ impl<AddressType:AddressSourceType + 'static> ProcessMemoryManipulator<AddressTy
 		let address_ranges:Arc<Vec<(Range<AddressType>, MemorySnapshotStorage)>> = Arc::new(snapshot.take_address_ranges());
 		let range_cursor:Arc<Mutex<usize>> = Arc::new(Mutex::new(0));
 		let value_filter:Arc<ValueFilter> = Arc::new(value_filter);
-		let mut threads:Vec<thread::JoinHandle<Vec<(AddressType, ValueType)>>> = Vec::new();
+		let mut threads:Vec<JoinHandle<Vec<(AddressType, ValueType)>>> = Vec::new();
 		for _thread_index in 0..self.scanner_thread_count() {
 			let thread_range_cursor:Arc<Mutex<usize>> = Arc::clone(&range_cursor);
 			let thread_address_ranges:Arc<Vec<(Range<AddressType>, MemorySnapshotStorage)>> = Arc::clone(&address_ranges);
@@ -125,13 +125,14 @@ impl<AddressType:AddressSourceType + 'static> ProcessMemoryManipulator<AddressTy
 
 
 	/// Re-scan for a value with a filter on the current and previous value.
-	pub fn re_scan<ValueType:MemoryDataType, ValueFilter:Fn(&ValueType, &ValueType) -> bool>(&mut self, value_filter:ValueFilter, previous_results:&MemoryScanResult<AddressType, ValueType>) -> Result<MemoryScanResult<AddressType, ValueType>, Box<dyn Error>> {
+	pub fn re_scan<ValueType:MemoryDataType + 'static, ValueFilter:Fn(&ValueType, &ValueType) -> bool + Send + Sync + 'static>(&mut self, value_filter:ValueFilter, previous_results:MemoryScanResult<AddressType, ValueType>) -> Result<MemoryScanResult<AddressType, ValueType>, Box<dyn Error>> {
 		let snapshot:MemorySnapshot<AddressType> = self.create_memory_snapshot("", None)?;
-		self.re_scan_with_snapshot(value_filter, previous_results, &snapshot)
+		self.re_scan_with_snapshot(value_filter, previous_results, snapshot)
 	}
 
 	/// Re-scan for a value with a filter on the current and previous value and a snapshot.
-	pub fn re_scan_with_snapshot<ValueType:MemoryDataType, ValueFilter:Fn(&ValueType, &ValueType) -> bool>(&mut self, value_filter:ValueFilter, previous_results:&MemoryScanResult<AddressType, ValueType>, snapshot:&MemorySnapshot<AddressType>) -> Result<MemoryScanResult<AddressType, ValueType>, Box<dyn Error>> {
+	pub fn re_scan_with_snapshot<ValueType:MemoryDataType + 'static, ValueFilter:Fn(&ValueType, &ValueType) -> bool + Send + Sync + 'static>(&mut self, value_filter:ValueFilter, previous_results:MemoryScanResult<AddressType, ValueType>, snapshot:MemorySnapshot<AddressType>) -> Result<MemoryScanResult<AddressType, ValueType>, Box<dyn Error>> {
+		const BATCH_SIZE:usize = 4094;
 
 		// Skip scanning if address ranges are empty.
 		if snapshot.address_ranges().is_empty() {
@@ -147,36 +148,83 @@ impl<AddressType:AddressSourceType + 'static> ProcessMemoryManipulator<AddressTy
 			}
 		};
 
-		// Loop through previous results, caching the current snapshot block.
-		let mut results:Vec<(AddressType, ValueType)> = Vec::with_capacity(RESULTS_LIST_GROWTH_SIZE);
-		let mut results_remaining_capacity:usize = RESULTS_LIST_GROWTH_SIZE;
-		let mut cached_bytes_block:(Range<AddressType>, Vec<u8>, *const ValueType::Bytes) = (AddressType::default()..AddressType::default(), Vec::new(), ptr::null());
-		for (address, previous_value) in &previous_results.results {
+		// Spawn threads.
+		let address_ranges:Arc<Vec<(Range<AddressType>, MemorySnapshotStorage)>> = Arc::new(snapshot.take_address_ranges());
+		let prev_results:Arc<Vec<(AddressType, ValueType)>> = Arc::new(previous_results.results);
+		let batch_cursor:Arc<Mutex<usize>> = Arc::new(Mutex::new(0));
+		let value_filter:Arc<ValueFilter> = Arc::new(value_filter);
+		let mut threads:Vec<JoinHandle<Vec<(AddressType, ValueType)>>> = Vec::new();
+		for _thread_index in 0..self.scanner_thread_count() {
+			let thread_batch_cursor:Arc<Mutex<usize>> = Arc::clone(&batch_cursor);
+			let thread_address_ranges:Arc<Vec<(Range<AddressType>, MemorySnapshotStorage)>> = Arc::clone(&address_ranges);
+			let thread_value_filter:Arc<ValueFilter> = Arc::clone(&value_filter);
+			let thread_previous_results:Arc<Vec<(AddressType, ValueType)>> = Arc::clone(&prev_results);
+			threads.push(
+				thread::spawn(move || {
 
-			// If the address does not fall within the cached snapshot block, cache the required block.
-			// As MemoryScanResults are inheritly created in a way that sorts them, this should not happen often.
-			if *address < cached_bytes_block.0.start || *address >= cached_bytes_block.0.end {
-				if let Some(current_snapshot) = snapshot.address_ranges().iter().find(|(range, _)| range.start <= *address && range.end > *address) {
-					cached_bytes_block = (current_snapshot.0.clone(), current_snapshot.1.get_bytes()?, ptr::null());
-					cached_bytes_block.2 = &cached_bytes_block.1[0] as *const u8 as *const ValueType::Bytes;
-				} else {
-					continue;
-				}
-			}
+					// Loop through memory adress batches.
+					let mut results:Vec<(AddressType, ValueType)> = Vec::with_capacity(RESULTS_LIST_GROWTH_SIZE);
+					let mut results_remaining_capacity:usize = RESULTS_LIST_GROWTH_SIZE;
+					loop {
 
-			// If the current and previous value matches the filter, add it to the results list.
-			let value_bytes:ValueType::Bytes = unsafe { ptr::read_unaligned(cached_bytes_block.2.byte_add((*address - cached_bytes_block.0.start).to_usize())) };
-			let value:ValueType = bytes_to_value(value_bytes);
-			if value_filter(&value, previous_value) {
-				results.push((*address, value));
-				results_remaining_capacity -= 1;
-				if results_remaining_capacity == 0 {
-					results.reserve(RESULTS_LIST_GROWTH_SIZE);
-					results_remaining_capacity = RESULTS_LIST_GROWTH_SIZE;
-				}
-			}
+						// Increment cursor.
+						let batch_index:usize = {
+							let mut cursor_handle:MutexGuard<'_, usize> = thread_batch_cursor.lock().unwrap();
+							*cursor_handle += 1;
+							*cursor_handle - 1
+						};
+						let batch_start:usize = batch_index * BATCH_SIZE;
+						if batch_start >= thread_previous_results.len() {
+							break;
+						}
+						let batch_end:usize = (batch_start + BATCH_SIZE).min(thread_previous_results.len());
+						
+						// Scan batch.
+						let batch:&[(AddressType, ValueType)] = &thread_previous_results[batch_start..batch_end];
+						let mut cached_bytes_block:(Range<AddressType>, Vec<u8>, *const ValueType::Bytes) = (AddressType::default()..AddressType::default(), Vec::new(), ptr::null());
+						for (address, previous_value) in batch {
 
+							// If the address does not fall within the cached snapshot block, cache the required block.
+							// As MemoryScanResults are inherently created in a way that largely sorts them, this should not happen often.
+							if *address < cached_bytes_block.0.start || *address >= cached_bytes_block.0.end {
+								if let Some(current_snapshot) = thread_address_ranges.iter().find(|(range, _)| range.start <= *address && range.end > *address) {
+									if let Ok(bytes) = current_snapshot.1.get_bytes() {
+										cached_bytes_block = (current_snapshot.0.clone(), bytes, ptr::null());
+										cached_bytes_block.2 = &cached_bytes_block.1[0] as *const u8 as *const ValueType::Bytes;
+									} else {
+										continue;
+									}
+								} else {
+									continue;
+								}
+							}
+
+							// If the current and previous value matches the filter, add it to the results list.
+							let value_bytes:ValueType::Bytes = unsafe { ptr::read_unaligned(cached_bytes_block.2.byte_add((*address - cached_bytes_block.0.start).to_usize())) };
+							let value:ValueType = bytes_to_value(value_bytes);
+							if thread_value_filter(&value, previous_value) {
+								results.push((*address, value));
+								results_remaining_capacity -= 1;
+								if results_remaining_capacity == 0 {
+									results.reserve(RESULTS_LIST_GROWTH_SIZE);
+									results_remaining_capacity = RESULTS_LIST_GROWTH_SIZE;
+								}
+							}
+						}
+					}
+					results
+				})
+			);
 		}
+		
+		// Combine results from threads.
+		let mut results:Vec<(AddressType, ValueType)> = Vec::with_capacity(RESULTS_LIST_GROWTH_SIZE);
+		for thread in threads {
+			if let Ok(thread_results) = thread.join() {
+				results.extend(thread_results);
+			}
+		}
+
 		Ok(MemoryScanResult::new(results))
 	}
 }
