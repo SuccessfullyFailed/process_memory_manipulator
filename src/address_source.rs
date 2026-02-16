@@ -6,6 +6,8 @@ use crate::MemoryDataType;
 
 pub trait AddressSourceType:Send + Sync + Debug + Display + Default + LowerHex + Copy + PartialEq + PartialOrd + Add<Output=Self> + AddAssign + Sub<Output=Self> + SubAssign + MemoryDataType {
 	fn to_usize(&self) -> usize;
+	fn to_u64(&self) -> u64;
+	fn to_i32(&self) -> i32;
 	fn to_c_void_ptr(&self) -> *const c_void;
 	fn to_c_void_ptr_mut(&self) -> *mut c_void;
 	fn from_u64(address:u64) -> Self;
@@ -16,6 +18,12 @@ pub trait AddressSourceType:Send + Sync + Debug + Display + Default + LowerHex +
 impl AddressSourceType for u64 {
 	fn to_usize(&self) -> usize {
 		*self as usize
+	}
+	fn to_u64(&self) -> u64 {
+		*self
+	}
+	fn to_i32(&self) -> i32 {
+		*self as i32
 	}
 	fn to_c_void_ptr(&self) -> *const c_void {
 		*self as *const c_void
@@ -40,6 +48,12 @@ impl AddressSourceType for u64 {
 impl AddressSourceType for u32 {
 	fn to_usize(&self) -> usize {
 		*self as usize
+	}
+	fn to_u64(&self) -> u64 {
+		*self as u64
+	}
+	fn to_i32(&self) -> i32 {
+		*self as i32
 	}
 	fn to_c_void_ptr(&self) -> *const c_void {
 		*self as *const c_void

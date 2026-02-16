@@ -21,8 +21,8 @@ pub trait MemoryDataType:Send + Sync + Sized + Copy {
 macro_rules! impl_data_type_for_atom {
 	($type_name:ident, $bytes_size:expr) => {
 		impl MemoryDataType for $type_name {
-			const BYTES_SIZE:usize = core::mem::size_of::<$type_name>();
-			type Bytes = [u8; core::mem::size_of::<$type_name>()];
+			const BYTES_SIZE:usize = $bytes_size;
+			type Bytes = [u8; $bytes_size];
 			
 			fn mdt_from_be_bytes(bytes:Self::Bytes) -> Self {
 				Self::from_be_bytes(bytes)
@@ -45,8 +45,8 @@ macro_rules! impl_data_type_for_atom {
 		}
 
 		impl<const LIST_SIZE:usize> MemoryDataType for [$type_name; LIST_SIZE] {
-			const BYTES_SIZE:usize = { LIST_SIZE * core::mem::size_of::<$type_name>() };
-			type Bytes = [u8; core::mem::size_of::<$type_name>()];
+			const BYTES_SIZE:usize = { LIST_SIZE * $bytes_size };
+			type Bytes = [u8; $bytes_size];
 			
 			fn mdt_from_be_bytes(bytes:Self::Bytes) -> Self {
 				(0..LIST_SIZE).map(|index|

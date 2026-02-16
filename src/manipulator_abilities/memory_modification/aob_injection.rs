@@ -1,4 +1,4 @@
-use crate::{ AOBReference, AddressSourceType, ProcessMemoryManipulator, RawAobPattern };
+use crate::{ AOBReference, AddressSourceType, MachineCode, ProcessMemoryManipulator, RawAobPattern };
 use std::error::Error;
 
 
@@ -63,37 +63,27 @@ impl<AddressType:AddressSourceType + 'static> AOBInjection<AddressType> {
 				
 				// If replacement pattern does not fit inside existing pattern, write bytes somewhere else and create a jump to and from that.
 				else if search_pattern_len > 5 {
-					let end_of_injection_address:AddressType = injection_address + AddressSourceType::from_usize(search_pattern_len);
 					let big_endian:bool = pmm.big_endian();
+					let end_of_injection_address:AddressType = injection_address + AddressSourceType::from_usize(search_pattern_len);
+					let reroute_function:MachineCode<AddressType> = MachineCode::raw_bytes(self.replacement_bytes.clone()) + MachineCode::jmp_to(end_of_injection_address);
 
 					// Find or get reroute address.
 					let rerouting_address:AddressType = match self.reroute_injection_address.clone() {
 						Some(existing_rerouting_address) => existing_rerouting_address,
 						None => {
-							let required_memory:AddressType = AddressType::from_usize((((replace_pattern_len + 12) / 8) + 1) * 8); // Replacement bytes + biggest jump command (12) rounded by 8-bytes
-							let mut reroute_bytes:Vec<u8> = self.replacement_bytes.clone();
-							let reroute_address:AddressType = {
-								if let Ok(reroute_near_address) = pmm.allocate_memory_near(required_memory, injection_address, AddressType::max_relative_jmp_offset()) {
-									reroute_bytes.extend(Self::relative_direct_jmp(reroute_near_address + AddressType::from_usize(replace_pattern_len), end_of_injection_address, big_endian));
-									reroute_near_address
-								} else {
-									let reroute_far_address:AddressType = pmm.allocate_memory(required_memory)?;
-									reroute_bytes.extend(Self::absolute_indirect_jmp(end_of_injection_address));
-									reroute_far_address
-								}
-							};
-							pmm.write_bytes(reroute_address, &reroute_bytes)?;
+							let required_memory:AddressType = AddressType::from_usize(reroute_function.estimated_byte_count().end);
+							let reroute_address:AddressType = pmm.allocate_memory_try_near(required_memory, injection_address, AddressType::max_relative_jmp_offset())?;
+							pmm.write_bytes(reroute_address, &reroute_function.to_bytes(Some(reroute_address), big_endian))?;
 							self.reroute_injection_address = Some(reroute_address.clone());
 							reroute_address
 						}
 					};
 
 					// Create reroute.
-					let mut injection_bytes:Vec<u8> = Self::create_jmp(injection_address, rerouting_address, big_endian);
+					let injection_bytes:Vec<u8> = MachineCode::jmp_to(rerouting_address).to_bytes_amount(self.injection_address, big_endian, search_pattern_len);
 					if injection_bytes.len() > search_pattern_len {
 						return Err("Injection does not fit within the search pattern, so replacement method is not possible.".into());
 					}
-					injection_bytes.extend(vec![DO_NOTHING_BYTE; search_pattern_len - injection_bytes.len()]);
 					pmm.write_bytes(injection_address, &injection_bytes)?;
 					Ok(())
 				}
@@ -127,69 +117,6 @@ impl<AddressType:AddressSourceType + 'static> AOBInjection<AddressType> {
 
 			// Was not injected yet, return success.
 			None => Ok(())
-		}
-	}
-
-
-
-	/* BYTE COMMANDS CREATION METHODS */
-
-	/// Create a list of bytes that will jmp from one address to another. Automatically picks a relative-direct-jmp or an absolute-indirect-jmp The instruction address is the address where the jmp command starts, not the instruction after it.
-	pub(crate) fn create_jmp(instruction_address:AddressType, target_address:AddressType, big_endian:bool) -> Vec<u8> {
-		let jump_start:AddressType = instruction_address + AddressType::from_usize(5);
-		let jump_offset_abs = {
-			if jump_start > target_address {
-				jump_start - target_address
-			} else {
-				target_address - jump_start
-			}
-		};
-		if jump_offset_abs < AddressType::max_relative_jmp_offset() {
-			Self::relative_direct_jmp(instruction_address, target_address, big_endian)
-		} else {
-			Self::absolute_indirect_jmp(target_address)
-		}
-	}
-
-	/// Create a list of bytes that will do a relative jmp from one address to another. The instruction address is the address where the jmp command starts, not the instruction after it.
-	pub(crate) fn relative_direct_jmp(instruction_address:AddressType, target_address:AddressType, big_endian:bool) -> Vec<u8> {
-		const JMP_BYTE:u8 = 0xE9;
-		const JMP_INSTRUCTION_BYTES_LEN:usize = 5;
-
-		let jmp_origin:AddressType = instruction_address + AddressType::from_usize(JMP_INSTRUCTION_BYTES_LEN);
-		let jmp_offset:AddressType = target_address.wrapping_sub(jmp_origin);
-		let jmp_offset_bytes:Vec<u8> = {
-			if big_endian {
-				if AddressType::BYTES_SIZE == 4 {
-					jmp_offset.mdt_to_be_bytes_vec()
-				} else {
-					jmp_offset.mdt_to_be_bytes_vec()[4..].to_vec()
-				}
-			} else {
-				if AddressType::BYTES_SIZE == 4 {
-					jmp_offset.mdt_to_le_bytes_vec()
-				} else {
-					jmp_offset.mdt_to_le_bytes_vec()[..4].to_vec()
-				}
-			}
-		};
-		vec![vec![JMP_BYTE], jmp_offset_bytes].into_iter().flatten().collect()
-	}
-
-	/// Create a list of bytes that will do an absolute jmp to the target address.
-	pub(crate) fn absolute_indirect_jmp(target_address:AddressType) -> Vec<u8> {
-		const JUMP_BYTE:u8 = 0xFF;
-		const QWORD_BYTE:u8 = 0x25;
-
-		let address_bytes:Vec<u8> = {
-			let mut address_bytes:Vec<u8> = target_address.mdt_to_le_bytes_vec(); // x86 always uses little endian for absolute jumps.
-			address_bytes.extend(vec![0x00; 8 - address_bytes.len()]);
-			address_bytes
-		};
-		if address_bytes.len() == 4 {
-			vec![vec![JUMP_BYTE, QWORD_BYTE], address_bytes].into_iter().flatten().collect()
-		} else {
-			vec![vec![JUMP_BYTE, QWORD_BYTE, 0x00, 0x00, 0x00, 0x00], address_bytes].into_iter().flatten().collect()
 		}
 	}
 }

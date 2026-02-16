@@ -58,8 +58,17 @@ impl<AddressType:AddressSourceType> ProcessMemoryManipulator<AddressType> {
 		self.allocate_memory_at(size, AddressType::default())
 	}
 
+	/// Try to allocate a new memory of the given size near the given address. If that fails, try to allocate any memory.
+	pub fn allocate_memory_try_near(&mut self, size:AddressType, target_address:AddressType, max_allowed_offset:AddressType) -> Result<AddressType, Box<dyn Error>> {
+		if let Ok(address) = self.allocate_memory_near(size, target_address, max_allowed_offset) {
+			Ok(address)
+		} else {
+			self.allocate_memory(size)
+		}
+	}
+
 	/// Allocate new memory of the given size near the given address.
-	pub fn allocate_memory_near(&mut self, size:AddressType, target_address:AddressType, max_allowed_offset:AddressType) -> Result<AddressType, Box<dyn Error>> where AddressType:PartialOrd {
+	pub fn allocate_memory_near(&mut self, size:AddressType, target_address:AddressType, max_allowed_offset:AddressType) -> Result<AddressType, Box<dyn Error>> {
 		let min_address:AddressType = if target_address > max_allowed_offset { target_address - max_allowed_offset } else { AddressType::default() };
 		let max_address:AddressType = target_address + max_allowed_offset;
 		let mut address:AddressType = min_address;
