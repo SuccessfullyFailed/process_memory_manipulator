@@ -1,6 +1,7 @@
 use std::ops::{ BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign };
 
 
+
 #[derive(PartialEq, Eq, Clone, Copy)]
 pub struct MemoryAccessToken(pub(crate) u32);
 impl MemoryAccessToken {

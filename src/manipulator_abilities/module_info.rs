@@ -1,4 +1,4 @@
-use winapi::{ shared::{minwindef::{ DWORD, HINSTANCE__ }, ntdef::HANDLE as ModuleHandle }, um::{ psapi::{ EnumProcessModulesEx, GetModuleBaseNameA, GetModuleInformation, MODULEINFO }, winnt::HANDLE as WinHandle } };
+use winapi::{ shared::{ minwindef::{ DWORD, HINSTANCE__ }, ntdef::HANDLE as ModuleHandle }, um::{ winnt::HANDLE as WinHandle, psapi::{ EnumProcessModulesEx, GetModuleBaseNameA, GetModuleInformation, MODULEINFO } } };
 use crate::{ AddressSourceType, MemoryAccessToken, ProcessMemoryManipulator };
 use std::{ error::Error, mem, ptr };
 
