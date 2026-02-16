@@ -13,6 +13,7 @@ pub struct ProcessMemoryManipulator<AddressType:AddressSourceType> {
 	process_name:String,
 	process_handle:Option<ProcessHandle>,
 	big_endian:bool,
+	thread_count:usize,
 
 	_address_default:AddressType
 }
@@ -26,9 +27,19 @@ impl<AddressType:AddressSourceType> ProcessMemoryManipulator<AddressType> {
 			process_name: process_name.to_string(),
 			process_handle: None,
 			big_endian,
+			thread_count: 1,
 
 			_address_default: AddressType::default()
 		}
+	}
+
+	/// Return self with another amount of threads allowed.
+	pub fn with_thread_count(mut self, thread_count:usize) -> Self {
+		if thread_count == 0 {
+			panic!("Scanner thread count cannot be 0.");
+		}
+		self.thread_count = thread_count;
+		self
 	}
 
 
@@ -43,6 +54,11 @@ impl<AddressType:AddressSourceType> ProcessMemoryManipulator<AddressType> {
 	/// Wether or not this manipulator is big endian.
 	pub fn big_endian(&self) -> bool {
 		self.big_endian
+	}
+
+	/// The amount of threads the manipulator is allowed to use.
+	pub fn scanner_thread_count(&self) -> usize {
+		self.thread_count
 	}
 
 
@@ -77,7 +93,7 @@ impl<AddressType:AddressSourceType> ProcessMemoryManipulator<AddressType> {
 
 
 
-pub trait AddressSourceType:Debug + Display + Default + LowerHex + Copy + PartialEq + PartialOrd + Add<Output=Self> + AddAssign + Sub<Output=Self> + SubAssign + MemoryDataType {
+pub trait AddressSourceType:Send + Sync + Debug + Display + Default + LowerHex + Copy + PartialEq + PartialOrd + Add<Output=Self> + AddAssign + Sub<Output=Self> + SubAssign + MemoryDataType {
 	fn to_usize(&self) -> usize;
 	fn to_c_void_ptr(&self) -> *const c_void;
 	fn to_c_void_ptr_mut(&self) -> *mut c_void;

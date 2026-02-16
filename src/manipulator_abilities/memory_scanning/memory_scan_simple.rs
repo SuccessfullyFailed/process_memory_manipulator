@@ -3,7 +3,7 @@ use std::{ error::Error, ops::{ Range, Sub } };
 
 
 
-impl<AddressType:AddressSourceType + PartialEq + PartialOrd> ProcessMemoryManipulator<AddressType> {
+impl<AddressType:AddressSourceType + 'static> ProcessMemoryManipulator<AddressType> {
 
 	/* SIMPLIFIED SCAN METHODS */
 

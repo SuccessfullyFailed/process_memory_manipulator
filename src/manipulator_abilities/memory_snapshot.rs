@@ -26,6 +26,11 @@ impl<AddressType:AddressSourceType> MemorySnapshot<AddressType> {
 	pub fn address_ranges(&self) -> &[(Range<AddressType>, MemorySnapshotStorage)] {
 		&self.regions
 	}
+
+	/// Take the address ranges of the snapshot.
+	pub fn take_address_ranges(self) -> Vec<(Range<AddressType>, MemorySnapshotStorage)> {
+		self.regions
+	}
 }
 
 

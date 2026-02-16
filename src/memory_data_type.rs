@@ -1,4 +1,4 @@
-pub trait MemoryDataType:Sized + Copy {
+pub trait MemoryDataType:Send + Sync + Sized + Copy {
 	const BYTES_SIZE:usize;
 	type Bytes:AsRef<[u8]> + AsMut<[u8]> + Copy;
 

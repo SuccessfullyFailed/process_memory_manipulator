@@ -1,5 +1,5 @@
-use crate::{ AddressSourceType, MemoryDataType, MemorySnapshot, ProcessMemoryManipulator };
-use std::{ ptr, error::Error, ops::Range };
+use crate::{ AddressSourceType, MemoryDataType, MemorySnapshot, MemorySnapshotStorage, ProcessMemoryManipulator };
+use std::{ ptr, thread, ops::Range, error::Error, sync::{ Arc, Mutex, MutexGuard } };
 
 
 
@@ -27,16 +27,16 @@ impl<AddressType:AddressSourceType, ValueType:MemoryDataType> MemoryScanResult<A
 
 
 
-impl<AddressType:AddressSourceType + PartialEq + PartialOrd> ProcessMemoryManipulator<AddressType> {
+impl<AddressType:AddressSourceType + 'static> ProcessMemoryManipulator<AddressType> {
 
 	/// Scan for a value with a value filter.
-	pub fn scan<ValueType:MemoryDataType, ValueFilter:Fn(&ValueType) -> bool>(&mut self, value_filter:ValueFilter) -> Result<MemoryScanResult<AddressType, ValueType>, Box<dyn Error>> {
+	pub fn scan<ValueType:MemoryDataType + 'static, ValueFilter:Fn(&ValueType) -> bool + Send + Sync + 'static>(&mut self, value_filter:ValueFilter) -> Result<MemoryScanResult<AddressType, ValueType>, Box<dyn Error>> {
 		let snapshot:MemorySnapshot<AddressType> = self.create_memory_snapshot("", None)?;
-		self.scan_with_snapshot(value_filter, &snapshot)
+		self.scan_with_snapshot(value_filter, snapshot)
 	}
 
 	/// Scan for a value with a value filter and the given snapshot.
-	pub fn scan_with_snapshot<ValueType:MemoryDataType, ValueFilter:Fn(&ValueType) -> bool>(&mut self, value_filter:ValueFilter, snapshot:&MemorySnapshot<AddressType>) -> Result<MemoryScanResult<AddressType, ValueType>, Box<dyn Error>> {
+	pub fn scan_with_snapshot<ValueType:MemoryDataType + 'static, ValueFilter:Fn(&ValueType) -> bool + Send + Sync + 'static>(&mut self, value_filter:ValueFilter, snapshot:MemorySnapshot<AddressType>) -> Result<MemoryScanResult<AddressType, ValueType>, Box<dyn Error>> {
 
 		// Skip scanning if address ranges are empty.
 		if snapshot.address_ranges().is_empty() {
@@ -52,31 +52,69 @@ impl<AddressType:AddressSourceType + PartialEq + PartialOrd> ProcessMemoryManipu
 			}
 		};
 
-		// Loop through addresses ranges of the snapshot.
-		let mut results:Vec<(AddressType, ValueType)> = Vec::with_capacity(RESULTS_LIST_GROWTH_SIZE);
-		let mut results_remaining_capacity:usize = RESULTS_LIST_GROWTH_SIZE;
-		for (address_range, bytes_block) in snapshot.address_ranges() {
-			let block_bytes:Vec<u8> = bytes_block.get_bytes()?;
-			let block_size:usize = block_bytes.len();
-			if block_size > ValueType::BYTES_SIZE {
+		// Spawn threads.
+		let address_ranges:Arc<Vec<(Range<AddressType>, MemorySnapshotStorage)>> = Arc::new(snapshot.take_address_ranges());
+		let range_cursor:Arc<Mutex<usize>> = Arc::new(Mutex::new(0));
+		let value_filter:Arc<ValueFilter> = Arc::new(value_filter);
+		let mut threads:Vec<thread::JoinHandle<Vec<(AddressType, ValueType)>>> = Vec::new();
+		for _thread_index in 0..self.scanner_thread_count() {
+			let thread_range_cursor:Arc<Mutex<usize>> = Arc::clone(&range_cursor);
+			let thread_address_ranges:Arc<Vec<(Range<AddressType>, MemorySnapshotStorage)>> = Arc::clone(&address_ranges);
+			let thread_value_filter:Arc<ValueFilter> = Arc::clone(&value_filter);
+			threads.push(
+				thread::spawn(move || {
 
-				// Loop through addresses in the snapshot data.
-				let offset_end:usize = block_size - ValueType::BYTES_SIZE - 1;
-				let value_pointer:*const ValueType::Bytes = &block_bytes[0] as *const u8 as *const ValueType::Bytes;
-				for offset in 0..offset_end {
+					// Loop through memory ranges.
+					let mut results:Vec<(AddressType, ValueType)> = Vec::with_capacity(RESULTS_LIST_GROWTH_SIZE);
+					let mut results_remaining_capacity:usize = RESULTS_LIST_GROWTH_SIZE;
+					loop {
 
-					// If a value matches the filter, add it to the results list.
-					let value_bytes:ValueType::Bytes = unsafe { ptr::read_unaligned(value_pointer.byte_add(offset)) };
-					let value:ValueType = bytes_to_value(value_bytes);
-					if value_filter(&value) {
-						results.push((address_range.start + AddressType::from_usize(offset), value.clone()));
-						results_remaining_capacity -= 1;
-						if results_remaining_capacity == 0 {
-							results.reserve(RESULTS_LIST_GROWTH_SIZE);
-							results_remaining_capacity = RESULTS_LIST_GROWTH_SIZE;
+						// Increment cursor.
+						let range_index:usize = {
+							let mut cursor_handle:MutexGuard<'_, usize> = thread_range_cursor.lock().unwrap();
+							*cursor_handle += 1;
+							*cursor_handle - 1
+						};
+						if range_index >= thread_address_ranges.len() {
+							break;
+						}
+
+						// Scan range.
+						let (address_range, bytes_block) = &thread_address_ranges[range_index];
+						if let Ok(bytes_block) = bytes_block.get_bytes() {
+							let block_size:usize = bytes_block.len();
+							if block_size > ValueType::BYTES_SIZE {
+
+								// Loop through addresses in the snapshot data.
+								let offset_end:usize = block_size - ValueType::BYTES_SIZE - 1;
+								let value_pointer:*const ValueType::Bytes = &bytes_block[0] as *const u8 as *const ValueType::Bytes;
+								for offset in 0..offset_end {
+
+									// If a value matches the filter, add it to the results list.
+									let value_bytes:ValueType::Bytes = unsafe { ptr::read_unaligned(value_pointer.byte_add(offset)) };
+									let value:ValueType = bytes_to_value(value_bytes);
+									if thread_value_filter(&value) {
+										results.push((address_range.start + AddressType::from_usize(offset), value.clone()));
+										results_remaining_capacity -= 1;
+										if results_remaining_capacity == 0 {
+											results.reserve(RESULTS_LIST_GROWTH_SIZE);
+											results_remaining_capacity = RESULTS_LIST_GROWTH_SIZE;
+										}
+									}
+								}
+							}
 						}
 					}
-				}
+					results
+				})
+			);
+		}
+		
+		// Combine results from threads.
+		let mut results:Vec<(AddressType, ValueType)> = Vec::with_capacity(RESULTS_LIST_GROWTH_SIZE);
+		for thread in threads {
+			if let Ok(thread_results) = thread.join() {
+				results.extend(thread_results);
 			}
 		}
 
