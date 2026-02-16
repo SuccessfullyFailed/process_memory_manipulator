@@ -3,18 +3,45 @@ use std::{ error::Error };
 
 
 
-pub type RawAobPattern = Vec<Option<u8>>;
+#[derive(Clone)]
+pub enum RawAobPattern { Full(Vec<u8>), Partial(Vec<Option<u8>>) }
+impl RawAobPattern {
+
+	/// Get the amount of bytes in the pattern.
+	pub fn len(&self) -> usize {
+		match self {
+			RawAobPattern::Full(bytes) => bytes.len(),
+			RawAobPattern::Partial(bytes) => bytes.len()
+		}
+	}
+
+	/// Get the raw bytes of the pattern.
+	pub fn raw_bytes(&self) -> Vec<Option<u8>> {
+		match self {
+			RawAobPattern::Full(bytes) => bytes.iter().map(|byte| Some(*byte)).collect(),
+			RawAobPattern::Partial(bytes) => bytes.clone()
+		}
+	}
+}
+
+
+
 pub trait AOBReference {
 	fn into_aob(self) -> Result<RawAobPattern, Box<dyn Error>>;
 }
-impl AOBReference for Vec<Option<u8>> {
+impl AOBReference for RawAobPattern {
 	fn into_aob(self) -> Result<RawAobPattern, Box<dyn Error>> {
 		Ok(self)
 	}
 }
+impl AOBReference for Vec<Option<u8>> {
+	fn into_aob(self) -> Result<RawAobPattern, Box<dyn Error>> {
+		Ok(RawAobPattern::Partial(self))
+	}
+}
 impl AOBReference for Vec<u8> {
 	fn into_aob(self) -> Result<RawAobPattern, Box<dyn Error>> {
-		Ok(self.into_iter().map(|value| Some(value)).collect())
+		Ok(RawAobPattern::Full(self))
 	}
 }
 impl<const SIZE:usize> AOBReference for [Option<u8>; SIZE] {
@@ -46,7 +73,7 @@ impl AOBReference for &str {
 			}
 		};
 
-		let mut bytes:RawAobPattern = Vec::new();
+		let mut bytes:Vec<Option<u8>> = Vec::new();
 		for word in self.split(" ").filter(|word| !word.is_empty()).map(|word| if word.starts_with("0x") { &word[2..] } else { word }) {
 			let word_chars:Vec<char> = word.chars().collect();
 			if word_chars.len() != 2 {
@@ -63,7 +90,11 @@ impl AOBReference for &str {
 			return Err(format!("Could not create AOB from {self}, returned empty list of bytes.").into());
 		}
 
-		Ok(bytes)
+		if bytes.iter().any(|byte| byte.is_none()) {
+			Ok(RawAobPattern::Partial(bytes))
+		} else {
+			Ok(RawAobPattern::Full(bytes.into_iter().flatten().collect()))
+		}
 	}
 }
 
@@ -249,13 +280,47 @@ impl<AddressType:AddressSourceType> ProcessMemoryManipulator<AddressType> {
 	/// Scan for an address using an AOB pattern.
 	pub fn scan_aob<AOBRef:AOBReference>(&mut self, aob_reference:AOBRef) -> Result<Option<AddressType>, Box<dyn Error>> {
 		let snapshot:MemorySnapshot<AddressType> = self.create_memory_snapshot("", None)?;
-		self.scan_aob_with_snapshot(aob_reference, &snapshot)
+		let raw_aob:RawAobPattern = aob_reference.into_aob()?;
+		match raw_aob {
+			RawAobPattern::Full(pattern) => self.scan_aob_with_snapshot_full_ref(pattern, &snapshot),
+			RawAobPattern::Partial(pattern) => self.scan_aob_with_snapshot_partial_ref(pattern, &snapshot)
+		}
 	}
 
 	/// Scan for an address using an AOB pattern and a snapshot.
-	pub fn scan_aob_with_snapshot<AOBRef:AOBReference>(&mut self, aob_reference:AOBRef, snapshot:&MemorySnapshot<AddressType>) -> Result<Option<AddressType>, Box<dyn Error>> {
-		let raw_aob:RawAobPattern = aob_reference.into_aob()?;
-		let aob_len:usize = raw_aob.len();
+	pub fn scan_aob_with_snapshot_full_ref(&mut self, aob_pattern:Vec<u8>, snapshot:&MemorySnapshot<AddressType>) -> Result<Option<AddressType>, Box<dyn Error>> {
+		let aob_len:usize = aob_pattern.len();
+		
+		// Skip scanning if address ranges are empty.
+		if snapshot.address_ranges().is_empty() {
+			return Ok(None);
+		}
+
+		// Loop through addresses ranges of the snapshot.
+		for (address_range, bytes_block) in snapshot.address_ranges() {
+			let block_bytes:Vec<u8> = bytes_block.get_bytes()?;
+			let block_size:usize = block_bytes.len();
+			if block_size > aob_len {
+
+				// Loop through addresses in the snapshot data.
+				let offset_end:usize = block_size - aob_len - 1;
+				for offset in 0..offset_end {
+
+					// If a value matches the aob pattern, return the found address.
+					if block_bytes[offset..offset + aob_len] == aob_pattern {
+						return Ok(Some(address_range.start + AddressType::from_usize(offset)));
+					}
+				}
+			}
+		}
+
+		// No value found.
+		Ok(None)
+	}
+
+	/// Scan for an address using an AOB pattern and a snapshot.
+	pub fn scan_aob_with_snapshot_partial_ref(&mut self, aob_pattern:Vec<Option<u8>>, snapshot:&MemorySnapshot<AddressType>) -> Result<Option<AddressType>, Box<dyn Error>> {
+		let aob_len:usize = aob_pattern.len();
 		
 		// Skip scanning if address ranges are empty.
 		if snapshot.address_ranges().is_empty() {
@@ -274,7 +339,7 @@ impl<AddressType:AddressSourceType> ProcessMemoryManipulator<AddressType> {
 
 					// If a value matches the aob pattern, return the found address.
 					let mut full_match:bool = true;
-					for (left, right) in raw_aob.iter().zip(&block_bytes[offset..offset + aob_len]) {
+					for (left, right) in aob_pattern.iter().zip(&block_bytes[offset..offset + aob_len]) {
 						if let Some(left) = left {
 							if left != right {
 								full_match = false;

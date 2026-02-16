@@ -8,7 +8,7 @@ mod tests {
 	#[test]
 	fn test_option_bytes_vec_to_aob() {
 		assert_eq!(
-			vec![Some(0x00), Some(0xFF), None, Some(0x08), Some(0x1F), None, Some(0x22), Some(0x01), Some(0x01)].into_aob().unwrap(),
+			vec![Some(0x00), Some(0xFF), None, Some(0x08), Some(0x1F), None, Some(0x22), Some(0x01), Some(0x01)].into_aob().unwrap().raw_bytes(),
 			vec![Some(0x00), Some(0xFF), None, Some(0x08), Some(0x1F), None, Some(0x22), Some(0x01), Some(0x01)]
 		);
 	}
@@ -16,7 +16,7 @@ mod tests {
 	#[test]
 	fn test_option_bytes_array_to_aob() {
 		assert_eq!(
-			[Some(0x00), Some(0xFF), None, Some(0x08), Some(0x1F), None, Some(0x22), Some(0x01), Some(0x01)].into_aob().unwrap(),
+			[Some(0x00), Some(0xFF), None, Some(0x08), Some(0x1F), None, Some(0x22), Some(0x01), Some(0x01)].into_aob().unwrap().raw_bytes(),
 			vec![Some(0x00), Some(0xFF), None, Some(0x08), Some(0x1F), None, Some(0x22), Some(0x01), Some(0x01)]
 		);
 	}
@@ -24,7 +24,7 @@ mod tests {
 	#[test]
 	fn test_bytes_vec_to_aob() {
 		assert_eq!(
-			vec![0x00, 0xFF, 0x08, 0x1F, 0x22, 0x01, 0x01].into_aob().unwrap(),
+			vec![0x00, 0xFF, 0x08, 0x1F, 0x22, 0x01, 0x01].into_aob().unwrap().raw_bytes(),
 			vec![Some(0x00), Some(0xFF), Some(0x08), Some(0x1F), Some(0x22), Some(0x01), Some(0x01)]
 		);
 	}
@@ -32,7 +32,7 @@ mod tests {
 	#[test]
 	fn test_bytes_array_to_aob() {
 		assert_eq!(
-			[0x00, 0xFF, 0x08, 0x1F, 0x22, 0x01, 0x01].into_aob().unwrap(),
+			[0x00, 0xFF, 0x08, 0x1F, 0x22, 0x01, 0x01].into_aob().unwrap().raw_bytes(),
 			vec![Some(0x00), Some(0xFF), Some(0x08), Some(0x1F), Some(0x22), Some(0x01), Some(0x01)]
 		);
 	}
@@ -40,7 +40,7 @@ mod tests {
 	#[test]
 	fn test_string_to_aob() {
 		assert_eq!(
-			"00 FF ?? 08 1F ?? 22 01 01".to_string().into_aob().unwrap(),
+			"00 FF ?? 08 1F ?? 22 01 01".to_string().into_aob().unwrap().raw_bytes(),
 			vec![Some(0x00), Some(0xFF), None, Some(0x08), Some(0x1F), None, Some(0x22), Some(0x01), Some(0x01)]
 		);
 	}
@@ -48,7 +48,7 @@ mod tests {
 	#[test]
 	fn test_str_to_aob() {
 		assert_eq!(
-			"00 FF ?? 08 1F ?? 22 01 01".into_aob().unwrap(),
+			"00 FF ?? 08 1F ?? 22 01 01".into_aob().unwrap().raw_bytes(),
 			vec![Some(0x00), Some(0xFF), None, Some(0x08), Some(0x1F), None, Some(0x22), Some(0x01), Some(0x01)]
 		);
 	}
@@ -56,7 +56,7 @@ mod tests {
 	#[test]
 	fn test_str_with_prefix_to_aob() {
 		assert_eq!(
-			"0x00 0xFF ?? 0x08 0x1F ?? 0x22 0x01 0x01".into_aob().unwrap(),
+			"0x00 0xFF ?? 0x08 0x1F ?? 0x22 0x01 0x01".into_aob().unwrap().raw_bytes(),
 			vec![Some(0x00), Some(0xFF), None, Some(0x08), Some(0x1F), None, Some(0x22), Some(0x01), Some(0x01)]
 		);
 	}
