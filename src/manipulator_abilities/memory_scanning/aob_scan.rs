@@ -169,13 +169,13 @@ impl<AddressType:AddressSourceType + 'static> AOBInjection<AddressType> {
 						None => {
 							let required_memory:AddressType = AddressType::from_usize((((replace_pattern_len + 12) / 8) + 1) * 8); // Replacement bytes + biggest jump command (12) rounded by 8-bytes
 							let mut reroute_bytes:Vec<u8> = self.replacement_bytes.clone();
-							let reroute_address = {
+							let reroute_address:AddressType = {
 								if let Ok(reroute_near_address) = pmm.allocate_memory_near(required_memory, injection_address, AddressType::max_relative_jmp_offset()) {
 									reroute_bytes.extend(Self::relative_direct_jmp(reroute_near_address + AddressType::from_usize(replace_pattern_len), end_of_injection_address, big_endian));
 									reroute_near_address
 								} else {
 									let reroute_far_address:AddressType = pmm.allocate_memory(required_memory)?;
-									reroute_bytes.extend(Self::absolute_indirect_jmp(end_of_injection_address, big_endian));
+									reroute_bytes.extend(Self::absolute_indirect_jmp(end_of_injection_address));
 									reroute_far_address
 								}
 							};
@@ -244,7 +244,7 @@ impl<AddressType:AddressSourceType + 'static> AOBInjection<AddressType> {
 		if jump_offset_abs < AddressType::max_relative_jmp_offset() {
 			Self::relative_direct_jmp(instruction_address, target_address, big_endian)
 		} else {
-			Self::absolute_indirect_jmp(target_address, big_endian)
+			Self::absolute_indirect_jmp(target_address)
 		}
 	}
 
@@ -274,21 +274,14 @@ impl<AddressType:AddressSourceType + 'static> AOBInjection<AddressType> {
 	}
 
 	/// Create a list of bytes that will do an absolute jmp to the target address.
-	pub(crate) fn absolute_indirect_jmp(target_address:AddressType, big_endian:bool) -> Vec<u8> {
+	pub(crate) fn absolute_indirect_jmp(target_address:AddressType) -> Vec<u8> {
 		const JUMP_BYTE:u8 = 0xFF;
 		const QWORD_BYTE:u8 = 0x25;
 
 		let address_bytes:Vec<u8> = {
-			if big_endian {
-				let value_bytes:Vec<u8> = target_address.mdt_to_be_bytes_vec();
-				let mut address_bytes:Vec<u8> = vec![0x00; 8 - value_bytes.len()];
-				address_bytes.extend(value_bytes);
-				address_bytes
-			} else {
-				let mut address_bytes:Vec<u8> = target_address.mdt_to_le_bytes_vec();
-				address_bytes.extend(vec![0x00; 8 - address_bytes.len()]);
-				address_bytes
-			}
+			let mut address_bytes:Vec<u8> = target_address.mdt_to_le_bytes_vec(); // x86 always uses little endian for absolute jumps.
+			address_bytes.extend(vec![0x00; 8 - address_bytes.len()]);
+			address_bytes
 		};
 		if address_bytes.len() == 4 {
 			vec![vec![JUMP_BYTE, QWORD_BYTE], address_bytes].into_iter().flatten().collect()

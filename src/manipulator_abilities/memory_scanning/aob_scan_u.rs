@@ -189,19 +189,19 @@ mod tests {
 	fn test_aob_jmp_creation() {
 		assert_eq!(AOBInjection::relative_direct_jmp(10_u32, 100_u32, false), vec![vec![0xE9], 85_i32.to_le_bytes().to_vec()].into_iter().flatten().collect::<Vec<u8>>());
 		assert_eq!(AOBInjection::relative_direct_jmp(100_u32, 10_u32, false), vec![vec![0xE9], (-95_i32).to_le_bytes().to_vec()].into_iter().flatten().collect::<Vec<u8>>());
-		assert_eq!(AOBInjection::absolute_indirect_jmp(910_u32, false), vec![vec![0xFF, 0x25, 0x00, 0x00, 0x00, 0x00], 910_u64.to_le_bytes().to_vec()].into_iter().flatten().collect::<Vec<u8>>());
+		assert_eq!(AOBInjection::absolute_indirect_jmp(910_u32), vec![vec![0xFF, 0x25, 0x00, 0x00, 0x00, 0x00], 910_u64.to_le_bytes().to_vec()].into_iter().flatten().collect::<Vec<u8>>());
 		
 		assert_eq!(AOBInjection::relative_direct_jmp(10_u64, 100_u64, false), vec![vec![0xE9], 85_i32.to_le_bytes().to_vec()].into_iter().flatten().collect::<Vec<u8>>());
 		assert_eq!(AOBInjection::relative_direct_jmp(100_u64, 10_u64, false), vec![vec![0xE9], (-95_i32).to_le_bytes().to_vec()].into_iter().flatten().collect::<Vec<u8>>());
-		assert_eq!(AOBInjection::absolute_indirect_jmp(910_u64, false), vec![vec![0xFF, 0x25, 0x00, 0x00, 0x00, 0x00], 910_u64.to_le_bytes().to_vec()].into_iter().flatten().collect::<Vec<u8>>());
+		assert_eq!(AOBInjection::absolute_indirect_jmp(910_u64), vec![vec![0xFF, 0x25, 0x00, 0x00, 0x00, 0x00], 910_u64.to_le_bytes().to_vec()].into_iter().flatten().collect::<Vec<u8>>());
 		
 		assert_eq!(AOBInjection::relative_direct_jmp(10_u32, 100_u32, true), vec![vec![0xE9], 85_i32.to_be_bytes().to_vec()].into_iter().flatten().collect::<Vec<u8>>());
 		assert_eq!(AOBInjection::relative_direct_jmp(100_u32, 10_u32, true), vec![vec![0xE9], (-95_i32).to_be_bytes().to_vec()].into_iter().flatten().collect::<Vec<u8>>());
-		assert_eq!(AOBInjection::absolute_indirect_jmp(910_u32, true), vec![vec![0xFF, 0x25, 0x00, 0x00, 0x00, 0x00], 910_u64.to_be_bytes().to_vec()].into_iter().flatten().collect::<Vec<u8>>());
+		assert_eq!(AOBInjection::absolute_indirect_jmp(910_u32), vec![vec![0xFF, 0x25, 0x00, 0x00, 0x00, 0x00], 910_u64.to_le_bytes().to_vec()].into_iter().flatten().collect::<Vec<u8>>());
 		
 		assert_eq!(AOBInjection::relative_direct_jmp(10_u64, 100_u64, true), vec![vec![0xE9], 85_i32.to_be_bytes().to_vec()].into_iter().flatten().collect::<Vec<u8>>());
 		assert_eq!(AOBInjection::relative_direct_jmp(100_u64, 10_u64, true), vec![vec![0xE9], (-95_i32).to_be_bytes().to_vec()].into_iter().flatten().collect::<Vec<u8>>());
-		assert_eq!(AOBInjection::absolute_indirect_jmp(910_u64, true), vec![vec![0xFF, 0x25, 0x00, 0x00, 0x00, 0x00], 910_u64.to_be_bytes().to_vec()].into_iter().flatten().collect::<Vec<u8>>());
+		assert_eq!(AOBInjection::absolute_indirect_jmp(910_u64), vec![vec![0xFF, 0x25, 0x00, 0x00, 0x00, 0x00], 910_u64.to_le_bytes().to_vec()].into_iter().flatten().collect::<Vec<u8>>());
 	}
 
 	#[test]
