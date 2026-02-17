@@ -89,11 +89,10 @@ impl<AddressType:AddressSourceType> MachineCode<AddressType> {
 						}
 					},
 					None => {
-						let address_bytes:Vec<u8> = address_to_bytes(target_address);
-						if address_bytes.len() == 4 {
-							combine(vec![JUMP_BYTE, QWORD_BYTE], address_bytes)
+						if AddressType::BYTES_SIZE == 4 {
+							combine(vec![JUMP_BYTE, QWORD_BYTE], address_to_bytes(target_address))
 						} else {
-							combine(vec![JUMP_BYTE, QWORD_BYTE, 0x00, 0x00, 0x00, 0x00], address_bytes)
+							combine(vec![JUMP_BYTE, QWORD_BYTE, 0x00, 0x00, 0x00, 0x00], target_address.mdt_to_le_bytes_vec())
 						}
 					}
 				}

@@ -327,14 +327,14 @@ mod tests {
 			vec![0xFF, 0x25, 0x00, 0x00, 0x00, 0x00, target_address_bytes_le[0], target_address_bytes_le[1], target_address_bytes_le[2], target_address_bytes_le[3], target_address_bytes_le[4], target_address_bytes_le[5], target_address_bytes_le[6], target_address_bytes_le[7]]
 		);
 
-		let machine_code:MachineCode<u64> = MachineCode::<u64>::jmp_to(target_address);
+		let machine_code:MachineCode<u64> = MachineCode::<u64>::jmp_to(target_address); // In x86, direct jump values are always 8-byte LE.
 		assert_eq!(
 			machine_code.estimated_byte_count(),
 			5..14 // 5-byte offset jmp or 14-byte absolute jmp.
 		);
 		assert_eq!(
 			machine_code.to_bytes(None, true),
-			vec![0xFF, 0x25, 0x00, 0x00, 0x00, 0x00, target_address_bytes_le[7], target_address_bytes_le[6], target_address_bytes_le[5], target_address_bytes_le[4], target_address_bytes_le[3], target_address_bytes_le[2], target_address_bytes_le[1], target_address_bytes_le[0]]
+			vec![0xFF, 0x25, 0x00, 0x00, 0x00, 0x00, target_address_bytes_le[0], target_address_bytes_le[1], target_address_bytes_le[2], target_address_bytes_le[3], target_address_bytes_le[4], target_address_bytes_le[5], target_address_bytes_le[6], target_address_bytes_le[7]]
 		);
 
 		let machine_code:MachineCode<u64> = MachineCode::<u64>::jmp_to(target_address);
@@ -367,14 +367,14 @@ mod tests {
 			vec![0xFF, 0x25, 0x00, 0x00, 0x00, 0x00, target_address_bytes_le[0], target_address_bytes_le[1], target_address_bytes_le[2], target_address_bytes_le[3], target_address_bytes_le[4], target_address_bytes_le[5], target_address_bytes_le[6], target_address_bytes_le[7]]
 		);
 
-		let machine_code:MachineCode<u64> = MachineCode::<u64>::jmp_to(target_address);
+		let machine_code:MachineCode<u64> = MachineCode::<u64>::jmp_to(target_address); // In x86, direct jump values are always 8-byte LE.
 		assert_eq!(
 			machine_code.estimated_byte_count(),
 			5..14 // 5-byte offset jmp or 14-byte absolute jmp.
 		);
 		assert_eq!(
 			machine_code.to_bytes(Some(source_address_far), true),
-			vec![0xFF, 0x25, 0x00, 0x00, 0x00, 0x00, target_address_bytes_le[7], target_address_bytes_le[6], target_address_bytes_le[5], target_address_bytes_le[4], target_address_bytes_le[3], target_address_bytes_le[2], target_address_bytes_le[1], target_address_bytes_le[0]]
+			vec![0xFF, 0x25, 0x00, 0x00, 0x00, 0x00, target_address_bytes_le[0], target_address_bytes_le[1], target_address_bytes_le[2], target_address_bytes_le[3], target_address_bytes_le[4], target_address_bytes_le[5], target_address_bytes_le[6], target_address_bytes_le[7]]
 		);
 	}
 }
