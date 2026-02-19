@@ -18,8 +18,14 @@ version = "0.1.0"
 dependencies = [
  "file_ref",
  "mini_rand",
+ "urge_prique",
  "winapi",
 ]
+
+[[package]]
+name = "urge_prique"
+version = "0.1.0"
+source = "git+https://github.com/SuccessfullyFailed/urge_prique#d62c0bfd7d7ba6aa3f56073e3b8d22caca74e92e"
 
 [[package]]
 name = "winapi"

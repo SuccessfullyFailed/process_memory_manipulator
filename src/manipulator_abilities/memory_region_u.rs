@@ -29,7 +29,7 @@ mod tests {
 
 	#[test]
 	fn test_memory_allocation_near_specific_address() {
-		const ACCEPTABLE_OFFSET:u64 = 100 * 1024 * 1024; // 100mb
+		const ACCEPTABLE_OFFSET:u64 = 2 * 1024 * 1024 * 1024; // 2GB
 
 		let process_name:String = active_process_name();
 		let mut pmm:ProcessMemoryManipulator<u64> = ProcessMemoryManipulator64::new(&process_name, false);

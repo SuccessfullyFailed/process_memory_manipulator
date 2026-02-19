@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-	use crate::{ MemoryDataType, MemoryScanResult, ProcessMemoryManipulator, ProcessMemoryManipulator64, active_process_name };
+	use crate::{ MemoryDataType, MemoryScanResult, ProcessMemoryManipulator, ProcessMemoryManipulator64, RegionIterator, active_process_name, scan_value_modification_sleep };
 	use mini_rand::RandomNumber;
 
 
@@ -11,6 +11,7 @@ mod tests {
 		let mut pmm:ProcessMemoryManipulator<u64> = ProcessMemoryManipulator64::new(&process_name, false);
 
 		let hidden_value:f32 = f32::random();
+		scan_value_modification_sleep();
 		let hidden_value_address:u64 = &hidden_value as *const f32 as u64;
 		let scan_results:MemoryScanResult<u64, f32> = pmm.scan(move |value:&f32| *value == hidden_value).unwrap();
 		
@@ -27,14 +28,39 @@ mod tests {
 		let mut pmm:ProcessMemoryManipulator<u64> = ProcessMemoryManipulator64::new(&process_name, false);
 
 		let mut hidden_value:f32 = f32::random();
+		scan_value_modification_sleep();
 		let hidden_value_address:u64 = &hidden_value as *const f32 as u64;
 		let mut scan_results:MemoryScanResult<u64, f32> = pmm.scan(move |value:&f32| value == &hidden_value).unwrap();
 		for _attempt_index in 0..MAX_ALLOWED_ATTEMPTS {
 			hidden_value = f32::random();
+			scan_value_modification_sleep();
 			scan_results = pmm.re_scan(move |value:&f32, _previous_value:&f32| value == &hidden_value, scan_results).unwrap();
 			if scan_results.results().len() <= 1 {
 				break;
 			}
+		}
+		
+		assert!(!scan_results.results().is_empty(), "No scan results found.");
+		assert!(scan_results.results().len() < MAX_ALLOWED_RESULTS, "Max allowed results exceeded.");
+		assert!(scan_results.results().iter().any(|(address, value)| address == &hidden_value_address && value == &hidden_value), "Hidden value not found in scan results.");
+	}
+
+	#[test]
+	fn test_memory_re_scan_many_times() {
+		const ATTEMPT_QUANTITY:usize = 32;
+		const MAX_ALLOWED_RESULTS:usize = 4;
+
+		let process_name:String = active_process_name();
+		let mut pmm:ProcessMemoryManipulator<u64> = ProcessMemoryManipulator64::new(&process_name, false);
+
+		let mut hidden_value:f32 = f32::random();
+		scan_value_modification_sleep();
+		let hidden_value_address:u64 = &hidden_value as *const f32 as u64;
+		let mut scan_results:MemoryScanResult<u64, f32> = pmm.scan(move |value:&f32| value == &hidden_value).unwrap();
+		for _attempt_index in 0..ATTEMPT_QUANTITY {
+			hidden_value = f32::random();
+			scan_value_modification_sleep();
+			scan_results = pmm.re_scan(move |value:&f32, _previous_value:&f32| value == &hidden_value, scan_results).unwrap();
 		}
 		
 		assert!(!scan_results.results().is_empty(), "No scan results found.");
@@ -49,6 +75,7 @@ mod tests {
 
 		let original_value:f32 = f32::random();
 		let hidden_value:f32 = original_value.mdt_flip_endian();
+		scan_value_modification_sleep();
 		let hidden_value_address:u64 = &hidden_value as *const f32 as u64;
 		let scan_results:MemoryScanResult<u64, f32> = pmm.scan(move |value:&f32| value == &original_value).unwrap();
 		
@@ -67,12 +94,14 @@ mod tests {
 
 		let mut original_value:f32 = f32::random();
 		let mut hidden_value:f32 = original_value.mdt_flip_endian();
+		scan_value_modification_sleep();
 		let hidden_value_address:u64 = &hidden_value as *const f32 as u64;
 		let mut scan_results:MemoryScanResult<u64, f32> = pmm.scan(move |value:&f32| value == &original_value).unwrap();
 		for _attempt_index in 0..MAX_ALLOWED_ATTEMPTS {
 			let previous_original_value:f32 = original_value;
 			original_value = f32::random();
 			hidden_value = original_value.mdt_flip_endian();
+			scan_value_modification_sleep();
 			scan_results = pmm.re_scan(move |value:&f32, previous_value:&f32| value == &original_value && previous_value == &previous_original_value, scan_results).unwrap();
 			if scan_results.results().len() <= MAX_ALLOWED_RESULTS {
 				break;
@@ -90,10 +119,50 @@ mod tests {
 		let mut pmm:ProcessMemoryManipulator<u64> = ProcessMemoryManipulator64::new(&process_name, false).with_thread_count(8);
 
 		let hidden_value:f32 = f32::random();
+		scan_value_modification_sleep();
 		let hidden_value_address:u64 = &hidden_value as *const f32 as u64;
 		let scan_results:MemoryScanResult<u64, f32> = pmm.scan(move |value:&f32| *value == hidden_value).unwrap();
 		
 		assert!(!scan_results.results().is_empty(), "No scan results found.");
 		assert!(scan_results.results().contains(&(hidden_value_address, hidden_value)), "Scan results do not contain hidden value.");
+	}
+
+	#[test]
+	fn test_memory_scan_multi_threaded_results_sorted() {
+		const RESULT_COUNT:usize = 16_000;
+
+		let process_name:String = active_process_name();
+		let mut pmm:ProcessMemoryManipulator<u64> = ProcessMemoryManipulator64::new(&process_name, false).with_thread_count(8);
+
+		let hidden_values:[u16; RESULT_COUNT] = [u16::random(); RESULT_COUNT];
+		let hidden_value_address:u64 = &hidden_values[0] as *const u16 as u64;
+		let scan_results:MemoryScanResult<u64, u16> = pmm.scan_in(move |value:&u16| *value == hidden_values[0], RegionIterator::new().with_range(hidden_value_address..hidden_value_address + 2 * RESULT_COUNT as u64)).unwrap();
+		
+		assert!(!scan_results.results().is_empty(), "No scan results found.");
+		assert!(scan_results.results().len() > RESULT_COUNT, "Not enough scan results found.");
+		let results:Vec<(u64, u16)> = scan_results.results()[..RESULT_COUNT].to_vec();
+		let mut sorted_results:Vec<(u64, u16)> = results.clone();
+		sorted_results.sort_by(|a, b| a.0.cmp(&b.0));
+		assert_eq!(results, sorted_results, "Scan results are not sorted properly.");
+	}
+
+	#[test]
+	fn test_memory_re_scan_multi_threaded_results_sorted() {
+		const RESULT_COUNT:usize = 16_000;
+
+		let process_name:String = active_process_name();
+		let mut pmm:ProcessMemoryManipulator<u64> = ProcessMemoryManipulator64::new(&process_name, false).with_thread_count(8);
+
+		let hidden_values:[u16; RESULT_COUNT] = [u16::random(); RESULT_COUNT];
+		let hidden_value_address:u64 = &hidden_values[0] as *const u16 as u64;
+		let mut scan_results:MemoryScanResult<u64, u16> = pmm.scan_in(move |value:&u16| *value == hidden_values[0], RegionIterator::new().with_range(hidden_value_address..hidden_value_address + 2 * RESULT_COUNT as u64)).unwrap();
+		scan_results = pmm.re_scan(move |value:&u16, _previous_value| *value == hidden_values[0], scan_results).unwrap();
+		
+		assert!(!scan_results.results().is_empty(), "No scan results found.");
+		assert!(scan_results.results().len() > RESULT_COUNT, "Not enough scan results found.");
+		let results:Vec<(u64, u16)> = scan_results.results()[..RESULT_COUNT].to_vec();
+		let mut sorted_results:Vec<(u64, u16)> = results.clone();
+		sorted_results.sort_by(|a, b| a.0.cmp(&b.0));
+		assert_eq!(results, sorted_results, "Scan results are not sorted properly.");
 	}
 }

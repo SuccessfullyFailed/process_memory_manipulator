@@ -35,3 +35,11 @@ pub(crate) fn active_process_name() -> String {
 		}
 	}
 }
+
+/// Sleep after modifying a value to be scanned. Makes sure the scanners aren't "too fast" to find it.
+#[cfg(test)]
+fn scan_value_modification_sleep() {
+	use std::{ thread::sleep, time::Duration };
+	
+	sleep(Duration::from_millis(5));
+}

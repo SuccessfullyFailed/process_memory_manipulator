@@ -8,7 +8,7 @@ impl<AddressType:AddressSourceType + 'static> ProcessMemoryManipulator<AddressTy
 	/* SIMPLIFIED SCAN METHODS */
 
 	/// Scan the memory for a specific value.
-	pub fn scan_value_exact<ValueType:MemoryDataType + PartialEq + 'static>(&mut self, value:ValueType) -> Result<MemoryScanResult<AddressType, ValueType>, Box<dyn Error>> {
+	pub fn scan_value_exact<ValueType:MemoryDataType + PartialEq + PartialOrd + 'static>(&mut self, value:ValueType) -> Result<MemoryScanResult<AddressType, ValueType>, Box<dyn Error>> {
 		self.scan(move |found_value| found_value == &value)
 	}
 
@@ -30,7 +30,7 @@ impl<AddressType:AddressSourceType + 'static> ProcessMemoryManipulator<AddressTy
 
 
 	/// Re-scan the memory for a specific value.
-	pub fn re_scan_value_exact<ValueType:MemoryDataType + PartialEq + 'static>(&mut self, value:ValueType, previous_results:MemoryScanResult<AddressType, ValueType>) -> Result<MemoryScanResult<AddressType, ValueType>, Box<dyn Error>> {
+	pub fn re_scan_value_exact<ValueType:MemoryDataType + PartialEq + PartialOrd + 'static>(&mut self, value:ValueType, previous_results:MemoryScanResult<AddressType, ValueType>) -> Result<MemoryScanResult<AddressType, ValueType>, Box<dyn Error>> {
 		self.re_scan(move |found_value, _previous_found_value| found_value == &value, previous_results)
 	}
 
@@ -50,12 +50,12 @@ impl<AddressType:AddressSourceType + 'static> ProcessMemoryManipulator<AddressTy
 	}
 
 	/// Re-scan the memory for any values that are the same as they previously were.
-	pub fn re_scan_value_unchanged<ValueType:MemoryDataType + PartialEq + 'static>(&mut self, previous_results:MemoryScanResult<AddressType, ValueType>) -> Result<MemoryScanResult<AddressType, ValueType>, Box<dyn Error>> {
+	pub fn re_scan_value_unchanged<ValueType:MemoryDataType + PartialEq + PartialOrd + 'static>(&mut self, previous_results:MemoryScanResult<AddressType, ValueType>) -> Result<MemoryScanResult<AddressType, ValueType>, Box<dyn Error>> {
 		self.re_scan(move |found_value, previous_found_value| found_value == previous_found_value, previous_results)
 	}
 
 	/// Re-scan the memory for any values that are not the same as they previously were.
-	pub fn re_scan_value_changed<ValueType:MemoryDataType + PartialEq + 'static>(&mut self, previous_results:MemoryScanResult<AddressType, ValueType>) -> Result<MemoryScanResult<AddressType, ValueType>, Box<dyn Error>> {
+	pub fn re_scan_value_changed<ValueType:MemoryDataType + PartialEq + PartialOrd + 'static>(&mut self, previous_results:MemoryScanResult<AddressType, ValueType>) -> Result<MemoryScanResult<AddressType, ValueType>, Box<dyn Error>> {
 		self.re_scan(move |found_value, previous_found_value| found_value != previous_found_value, previous_results)
 	}
 
