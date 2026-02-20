@@ -141,7 +141,7 @@ impl<AddressType:AddressSourceType + 'static> ProcessMemoryManipulator<AddressTy
 		};
 
 		// Spawn threads.
-		let memory_iterator = Arc::new(memory_iterator);
+		let memory_iterator:Arc<MemoryIter> = Arc::new(memory_iterator);
 		let previous_results:Arc<Vec<(AddressType, ValueType)>> = Arc::new(previous_results.results);
 		let previous_result_cursor:Arc<Mutex<usize>> = Arc::new(Mutex::new(0));
 		let value_filter:Arc<ValueFilter> = Arc::new(value_filter);

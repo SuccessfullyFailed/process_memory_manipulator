@@ -1,5 +1,5 @@
-use std::{ error::Error, ops::Range, sync::{ Arc, Mutex, MutexGuard }, thread::{ self, JoinHandle } };
-use crate::{ AddressSourceType, MemorySnapshot, MemorySnapshotStorage, ProcessMemoryManipulator };
+use crate::{ AddressSourceType, MemoryAccessToken, MemoryIterator, ProcessMemoryManipulator, RegionIterator };
+use std::{ sync::Arc, error::Error, thread::{ self, JoinHandle } };
 
 
 
@@ -104,66 +104,68 @@ impl<AddressType:AddressSourceType + 'static> ProcessMemoryManipulator<AddressTy
 
 	/// Scan for an address using an AOB pattern.
 	pub fn scan_aob<AOBRef:AOBReference>(&mut self, aob_reference:AOBRef) -> Result<Option<AddressType>, Box<dyn Error>> {
-		let snapshot:MemorySnapshot<AddressType> = self.create_memory_snapshot("", None)?;
 		let raw_aob:RawAobPattern = aob_reference.into_aob()?;
 		match raw_aob {
-			RawAobPattern::Full(pattern) => self.scan_aob_with_snapshot_full_ref(pattern, snapshot),
-			RawAobPattern::Partial(pattern) => self.scan_aob_with_snapshot_partial_ref(pattern, snapshot)
+			RawAobPattern::Full(pattern) => self.scan_aob_with_snapshot_full_ref(pattern, RegionIterator::new()),
+			RawAobPattern::Partial(pattern) => self.scan_aob_with_snapshot_partial_ref(pattern, RegionIterator::new())
 		}
 	}
 
 	/// Scan for an address using an AOB pattern and a snapshot.
-	pub fn scan_aob_with_snapshot_full_ref(&mut self, aob_pattern:Vec<u8>, snapshot:MemorySnapshot<AddressType>) -> Result<Option<AddressType>, Box<dyn Error>> {
-
-		// Skip scanning if address ranges are empty.
-		if snapshot.address_ranges().is_empty() {
-			return Ok(None);
-		}
+	pub fn scan_aob_with_snapshot_full_ref<MemoryIter:MemoryIterator<AddressType> + 'static>(&mut self, aob_pattern:Vec<u8>, memory_iterator:MemoryIter) -> Result<Option<AddressType>, Box<dyn Error>> {
 
 		// Spawn threads.
-		let address_ranges:Arc<Vec<(Range<AddressType>, MemorySnapshotStorage)>> = Arc::new(snapshot.take_address_ranges());
-		let range_cursor:Arc<Mutex<usize>> = Arc::new(Mutex::new(0));
+		let memory_iterator:Arc<MemoryIter> = Arc::new(memory_iterator);
 		let mut threads:Vec<JoinHandle<Option<AddressType>>> = Vec::new();
-		for _thread_index in 0..self.scanner_thread_count() {
-			let thread_range_cursor:Arc<Mutex<usize>> = Arc::clone(&range_cursor);
-			let thread_address_ranges:Arc<Vec<(Range<AddressType>, MemorySnapshotStorage)>> = Arc::clone(&address_ranges);
+		for thread_index in 0..self.scanner_thread_count() {
+			let thread_memory_iterator:Arc<MemoryIter> = Arc::clone(&memory_iterator);
 			let thread_aob_pattern:Vec<u8> = aob_pattern.clone();
+			let thread_process_name:String = self.process_name().to_string();
+			let thread_big_endian:bool = self.big_endian();
 			threads.push(
 				thread::spawn(move || {
 					let thread_aob_len:usize = thread_aob_pattern.len();
 
+					// Create new memory manipulator thread.
+					let mut thread_pmm:ProcessMemoryManipulator<AddressType> = ProcessMemoryManipulator::new(&thread_process_name, thread_big_endian);
+					if let Err(error) = thread_pmm.open_handle(MemoryAccessToken::NONE) {
+						eprintln!("AOB Scanner thread {thread_index} could not open handle: {error}.");
+					}
+
 					// Loop through memory ranges.
 					loop {
 
-						// Increment cursor.
-						let range_index:usize = {
-							let mut cursor_handle:MutexGuard<'_, usize> = thread_range_cursor.lock().unwrap();
-							*cursor_handle += 1;
-							*cursor_handle - 1
-						};
-						if range_index >= thread_address_ranges.len() {
-							break;
-						}
+						// Get next range.
+						match thread_memory_iterator.next(&mut thread_pmm) {
+							Err(error) => {
+								eprintln!("[WARNING] AOB Scanner thread {thread_index} failed getting next memory slice: {error}");
+								continue
+							},
+							Ok(potential_memory_slice) => {
+								match potential_memory_slice {
+									None => break,
+									Some(memory_slice) => {
 
-						// Scan range.
-						let (address_range, bytes_block) = &thread_address_ranges[range_index];
-						if let Ok(bytes_block) = bytes_block.get_bytes() {
-							let block_size:usize = bytes_block.len();
-							if block_size > thread_aob_len {
+										// Scan range.
+										let slice_len:usize = memory_slice.bytes.len();
+										if slice_len > thread_aob_len {
 
-								// Loop through addresses in the snapshot data.
-								let offset_end:usize = block_size - thread_aob_len - 1;
-								for offset in 0..offset_end {
+											// Loop through addresses in the snapshot data.
+											let offset_end:usize = slice_len - thread_aob_len - 1;
+											for offset in 0..offset_end {
 
-									// If a value matches the filter, return it as result and skip the cursor to the end.
-									if bytes_block[offset..offset + thread_aob_len] == thread_aob_pattern {
-										*thread_range_cursor.lock().unwrap() = thread_address_ranges.len();
-										return Some(address_range.start + AddressType::from_usize(offset));
+												// If a value matches the filter, return it as result and skip the cursor to the end.
+												if memory_slice.bytes[offset..offset + thread_aob_len] == thread_aob_pattern {
+													return Some(memory_slice.address_range.start + AddressType::from_usize(offset));
+												}
+											}
+										}
 									}
 								}
 							}
 						}
 					}
+
 					None
 				})
 			);
@@ -183,72 +185,74 @@ impl<AddressType:AddressSourceType + 'static> ProcessMemoryManipulator<AddressTy
 	}
 
 	/// Scan for an address using an AOB pattern and a snapshot.
-	pub fn scan_aob_with_snapshot_partial_ref(&mut self, aob_pattern:Vec<Option<u8>>, snapshot:MemorySnapshot<AddressType>) -> Result<Option<AddressType>, Box<dyn Error>> {
+	pub fn scan_aob_with_snapshot_partial_ref<MemoryIter:MemoryIterator<AddressType> + 'static>(&mut self, aob_pattern:Vec<Option<u8>>, memory_iterator:MemoryIter) -> Result<Option<AddressType>, Box<dyn Error>> {
 
 		// Find part of the aob pattern that can be fully matched.
 		let fully_matchable:Vec<u8> = aob_pattern.iter().take_while(|byte| byte.is_some()).map(|byte| byte.unwrap()).collect();
-		
-		// Skip scanning if address ranges are empty.
-		if snapshot.address_ranges().is_empty() {
-			return Ok(None);
-		}
 
 		// Spawn threads.
-		let address_ranges:Arc<Vec<(Range<AddressType>, MemorySnapshotStorage)>> = Arc::new(snapshot.take_address_ranges());
-		let range_cursor:Arc<Mutex<usize>> = Arc::new(Mutex::new(0));
+		let memory_iterator:Arc<MemoryIter> = Arc::new(memory_iterator);
 		let mut threads:Vec<JoinHandle<Option<AddressType>>> = Vec::new();
-		for _thread_index in 0..self.scanner_thread_count() {
-			let thread_range_cursor:Arc<Mutex<usize>> = Arc::clone(&range_cursor);
-			let thread_address_ranges:Arc<Vec<(Range<AddressType>, MemorySnapshotStorage)>> = Arc::clone(&address_ranges);
+		for thread_index in 0..self.scanner_thread_count() {
+			let thread_memory_iterator:Arc<MemoryIter> = Arc::clone(&memory_iterator);
 			let thread_aob_fully_matchable:Vec<u8> = fully_matchable.clone();
 			let thread_aob_partially_matchable:Vec<Option<u8>> = aob_pattern[thread_aob_fully_matchable.len()..].to_vec();
+			let thread_process_name:String = self.process_name().to_string();
+			let thread_big_endian:bool = self.big_endian();
 			threads.push(
 				thread::spawn(move || {
 					let thread_aob_fully_matchable_len:usize = thread_aob_fully_matchable.len();
 					let thread_aob_partially_matchable_len:usize = thread_aob_partially_matchable.len();
 					let thread_aob_pattern_len:usize = thread_aob_fully_matchable_len + thread_aob_partially_matchable_len;
 
+					// Create new memory manipulator thread.
+					let mut thread_pmm:ProcessMemoryManipulator<AddressType> = ProcessMemoryManipulator::new(&thread_process_name, thread_big_endian);
+					if let Err(error) = thread_pmm.open_handle(MemoryAccessToken::NONE) {
+						eprintln!("AOB Scanner thread {thread_index} could not open handle: {error}.");
+					}
+
 					// Loop through memory ranges.
 					loop {
 
-						// Increment cursor.
-						let range_index:usize = {
-							let mut cursor_handle:MutexGuard<'_, usize> = thread_range_cursor.lock().unwrap();
-							*cursor_handle += 1;
-							*cursor_handle - 1
-						};
-						if range_index >= thread_address_ranges.len() {
-							break;
-						}
+						// Get next range.
+						match thread_memory_iterator.next(&mut thread_pmm) {
+							Err(error) => {
+								eprintln!("[WARNING] AOB Scanner thread {thread_index} failed getting next memory slice: {error}");
+								continue
+							},
+							Ok(potential_memory_slice) => {
+								match potential_memory_slice {
+									None => break,
+									Some(memory_slice) => {
 
-						// Scan range.
-						let (address_range, bytes_block) = &thread_address_ranges[range_index];
-						if let Ok(bytes_block) = bytes_block.get_bytes() {
-							let block_size:usize = bytes_block.len();
-							if block_size > thread_aob_pattern_len {
+										// Scan range.
+										let slice_len:usize = memory_slice.bytes.len();
+										if slice_len > thread_aob_pattern_len {
 
-								// Loop through addresses in the snapshot data.
-								let offset_end:usize = block_size - thread_aob_pattern_len - 1;
-								for offset in 0..offset_end {
+											// Loop through addresses in the snapshot data.
+											let offset_end:usize = slice_len - thread_aob_pattern_len - 1;
+											for offset in 0..offset_end {
 
-									// If a value matches the filter, return it as result and skip the cursor to the end.
-									if bytes_block[offset..offset + thread_aob_fully_matchable_len] == thread_aob_fully_matchable {
-										let mut full_match:bool = true;
-										for (left, right) in thread_aob_partially_matchable.iter().zip(&bytes_block[offset + thread_aob_fully_matchable_len..offset + thread_aob_pattern_len]) {
-											if let Some(left) = left {
-												if left != right {
-													full_match = false;
+												// If a value matches the filter, return it as result and skip the cursor to the end.
+												if memory_slice.bytes[offset..offset + thread_aob_fully_matchable_len] == thread_aob_fully_matchable {
+													let mut full_match:bool = true;
+													for (left, right) in thread_aob_partially_matchable.iter().zip(&memory_slice.bytes[offset + thread_aob_fully_matchable_len..offset + thread_aob_pattern_len]) {
+														if let Some(left) = left {
+															if left != right {
+																full_match = false;
+															}
+														}
+													}
+													if full_match {
+														return Some(memory_slice.address_range.start + AddressType::from_usize(offset));
+													}
 												}
 											}
-										}
-										if full_match {
-											*thread_range_cursor.lock().unwrap() = thread_address_ranges.len();
-											return Some(address_range.start + AddressType::from_usize(offset));
 										}
 									}
 								}
 							}
-						}
+						};
 					}
 					None
 				})
