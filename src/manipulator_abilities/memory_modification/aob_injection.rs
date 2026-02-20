@@ -1,11 +1,11 @@
 use crate::{ AOBReference, AddressSourceType, MachineCode, ProcessMemoryManipulator, RawAobPattern };
-use std::error::Error;
+use std::{ error::Error, ops::Range };
 
 
 
 pub struct AOBInjection<AddressType:AddressSourceType> {
 	search_pattern:RawAobPattern,
-	replacement_bytes:Vec<u8>,
+	replacement:MachineCode<AddressType>,
 	original_bytes:Option<Vec<u8>>,
 	injection_address:Option<AddressType>,
 	reroute_injection_address:Option<AddressType>
@@ -15,10 +15,10 @@ impl<AddressType:AddressSourceType + 'static> AOBInjection<AddressType> {
 	/* CONSTRUCTION METHODS */
 
 	/// Create a new AOB injection.
-	pub fn new<AOBRef:AOBReference>(pattern:AOBRef, replacement_bytes:Vec<u8>) -> Result<AOBInjection<AddressType>, Box<dyn Error>> {
+	pub fn new<AOBRef:AOBReference>(pattern:AOBRef, replacement:MachineCode<AddressType>) -> Result<AOBInjection<AddressType>, Box<dyn Error>> {
 		Ok(AOBInjection {
 			search_pattern: pattern.into_aob()?,
-			replacement_bytes,
+			replacement,
 			original_bytes: None,
 			injection_address: None,
 			reroute_injection_address: None
@@ -41,19 +41,22 @@ impl<AddressType:AddressSourceType + 'static> AOBInjection<AddressType> {
 		match pmm.scan_aob(self.search_pattern.clone())? {
 			Some(injection_address) => {
 				let search_pattern_len:usize = self.search_pattern.len();
-				let replace_pattern_len:usize = self.replacement_bytes.len();
+				let replace_pattern_len:Range<usize> = self.replacement.estimated_byte_count();
 				self.original_bytes = Some(pmm.read_bytes(injection_address, search_pattern_len)?);
 				self.injection_address = Some(injection_address);
+				let big_endian:bool = pmm.big_endian();
 
 				// If no replacement, create empty instruction address.
-				if replace_pattern_len == 0 {
+				if replace_pattern_len.end == 0 {
 					pmm.write_bytes(injection_address, &vec![DO_NOTHING_BYTE; search_pattern_len])?;
 					Ok(())
 				}
 
 				// If replacement pattern fits inside existing pattern, simply replace in memory.
-				else if search_pattern_len >= replace_pattern_len {
-					pmm.write_bytes(injection_address, &self.replacement_bytes)?;
+				else if replace_pattern_len.end <= search_pattern_len {
+					let replacement_bytes:Vec<u8> = self.replacement.clone().to_bytes(Some(injection_address), big_endian);
+					let replace_pattern_len:usize = replacement_bytes.len();
+					pmm.write_bytes(injection_address, &replacement_bytes)?;
 					let empty_space:usize = search_pattern_len - replace_pattern_len;
 					if empty_space > 0 {
 						pmm.write_bytes(injection_address + AddressSourceType::from_usize(replace_pattern_len), &vec![DO_NOTHING_BYTE; empty_space])?;
@@ -65,7 +68,7 @@ impl<AddressType:AddressSourceType + 'static> AOBInjection<AddressType> {
 				else if search_pattern_len > 5 {
 					let big_endian:bool = pmm.big_endian();
 					let end_of_injection_address:AddressType = injection_address + AddressSourceType::from_usize(search_pattern_len);
-					let reroute_function:MachineCode<AddressType> = MachineCode::raw_bytes(self.replacement_bytes.clone()) + MachineCode::jmp_to(end_of_injection_address);
+					let reroute_function:MachineCode<AddressType> = self.replacement.clone() + MachineCode::jmp_to(end_of_injection_address);
 
 					// Find or get reroute address.
 					let rerouting_address:AddressType = match self.reroute_injection_address.clone() {

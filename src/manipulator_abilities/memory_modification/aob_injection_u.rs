@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-	use crate::{ AOBInjection, ProcessMemoryManipulator, ProcessMemoryManipulator64, active_process_name };
+	use crate::{ AOBInjection, MachineCode, ProcessMemoryManipulator, ProcessMemoryManipulator64, active_process_name };
 
 
 
@@ -19,7 +19,7 @@ mod tests {
 		];
 
 		// Create and enable injection.
-		let mut injection:AOBInjection<u64> = AOBInjection::new("01 53 12 44 8b 4b 12", replacement_instructions.to_vec()).unwrap();
+		let mut injection:AOBInjection<u64> = AOBInjection::new("01 53 12 44 8b 4b 12", MachineCode::RawBytes(replacement_instructions.to_vec())).unwrap();
 		injection.enable(&mut pmm).unwrap();
 
 		// Validate replacement.
@@ -42,7 +42,7 @@ mod tests {
 		];
 
 		// Create and enable injection.
-		let mut injection:AOBInjection<u64> = AOBInjection::new("01 53 13 44 8b 4b 13", replacement_instructions.to_vec()).unwrap();
+		let mut injection:AOBInjection<u64> = AOBInjection::new("01 53 13 44 8b 4b 13", MachineCode::RawBytes(replacement_instructions.to_vec())).unwrap();
 		injection.enable(&mut pmm).unwrap();
 
 		// Validate replacement.
@@ -61,7 +61,7 @@ mod tests {
 		];
 
 		// Create and enable injection.
-		let mut injection:AOBInjection<u64> = AOBInjection::new("01 53 14 44 8b 4b 14", Vec::new()).unwrap();
+		let mut injection:AOBInjection<u64> = AOBInjection::new("01 53 14 44 8b 4b 14", MachineCode::RawBytes(Vec::new())).unwrap();
 		injection.enable(&mut pmm).unwrap();
 
 		// Validate replacement.
@@ -109,7 +109,7 @@ mod tests {
 		let random_instructions_address:u64 = &random_instructions[0] as *const u8 as u64;
 
 		// Create and enable injection.
-		let mut injection:AOBInjection<u64> = AOBInjection::new("01 53 15 44 8B 4B 15 44 8B 4B 15", replacement_instructions.to_vec()).unwrap();
+		let mut injection:AOBInjection<u64> = AOBInjection::new("01 53 15 44 8B 4B 15 44 8B 4B 15", MachineCode::RawBytes(replacement_instructions.to_vec())).unwrap();
 		injection.enable(&mut pmm).unwrap();
 
 		// Validate that an external piece of code was created and the jump to it is accurate.
