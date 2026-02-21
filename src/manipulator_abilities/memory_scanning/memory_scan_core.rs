@@ -72,8 +72,7 @@ impl<AddressType:AddressSourceType + 'static> ProcessMemoryManipulator<AddressTy
 
 						// Get next range.
 						match thread_memory_iterator.next(&mut thread_pmm) {
-							Err(error) => {
-								eprintln!("[WARNING] Scanner thread {thread_index} failed getting next memory slice: {error}");
+							Err(_error) => {
 								continue
 							},
 							Ok(potential_memory_slice) => {
@@ -178,11 +177,10 @@ impl<AddressType:AddressSourceType + 'static> ProcessMemoryManipulator<AddressTy
 						match thread_memory_iterator.next_after(*next_address, &mut thread_pmm) {
 
 							// If next range errored, print error and move on to next result in previous results list.
-							Err(error) => {
+							Err(_error) => {
 								cursor += 1;
 								*cursor_handle = cursor;
 								drop(cursor_handle);
-								eprintln!("Re-scanner thread {thread_index} failed getting next memory slice: {error}");
 							},
 							Ok(potential_memory_slice) => match potential_memory_slice {
 

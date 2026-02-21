@@ -135,8 +135,7 @@ impl<AddressType:AddressSourceType + 'static> ProcessMemoryManipulator<AddressTy
 					// Loop through memory ranges.
 					loop {
 						match thread_memory_iterator.next(&mut thread_pmm) {
-							Err(error) => {
-								eprintln!("[WARNING] AOB Scanner thread {thread_index} failed getting next memory slice: {error}");
+							Err(_error) => {
 								continue
 							},
 							Ok(potential_memory_slice) => {
