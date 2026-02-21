@@ -144,19 +144,14 @@ mod tests {
 			for big_endian in [false, true] {
 				println!("origin_address: {}\tbig_endian: {}", origin_address.map(|value| format!("{:#x}", value)).unwrap_or("None".to_string()), big_endian);
 				let usize_variable_as_bytes:[u8; 2] = if big_endian { u16_variable.mdt_to_be_bytes() } else { u16_variable.mdt_to_le_bytes() };
-				let jump_offset_bytes:[u8; 4] = if big_endian { (usize_variable_as_bytes.len() as i32).mdt_to_be_bytes() } else { (usize_variable_as_bytes.len() as i32).mdt_to_le_bytes() };
 				let machine_code:MachineCode<u32> = MachineCode::<u32>::variable(u16_variable);
 				assert_eq!(
 					machine_code.estimated_byte_count(),
-					7..7
+					2..2
 				);
 				assert_eq!(
 					machine_code.to_bytes(origin_address, big_endian),
-					vec![
-						0xE9,
-						jump_offset_bytes[0], jump_offset_bytes[1], jump_offset_bytes[2], jump_offset_bytes[3],
-						usize_variable_as_bytes[0], usize_variable_as_bytes[1]
-					]
+					usize_variable_as_bytes
 				);
 			}
 		}
@@ -168,19 +163,14 @@ mod tests {
 			for big_endian in [false, true] {
 				println!("origin_address: {}\tbig_endian: {}", origin_address.map(|value| format!("{:#x}", value)).unwrap_or("None".to_string()), big_endian);
 				let usize_variable_as_bytes:[u8; 2] = if big_endian { u16_variable.mdt_to_be_bytes() } else { u16_variable.mdt_to_le_bytes() };
-				let jump_offset_bytes:[u8; 4] = if big_endian { (usize_variable_as_bytes.len() as i32).mdt_to_be_bytes() } else { (usize_variable_as_bytes.len() as i32).mdt_to_le_bytes() };
 				let machine_code:MachineCode<u64> = MachineCode::<u64>::variable(u16_variable);
 				assert_eq!(
 					machine_code.estimated_byte_count(),
-					7..7
+					2..2
 				);
 				assert_eq!(
 					machine_code.to_bytes(origin_address, big_endian),
-					vec![
-						0xE9,
-						jump_offset_bytes[0], jump_offset_bytes[1], jump_offset_bytes[2], jump_offset_bytes[3],
-						usize_variable_as_bytes[0], usize_variable_as_bytes[1]
-					]
+					usize_variable_as_bytes
 				);
 			}
 		}
@@ -194,18 +184,14 @@ mod tests {
 				println!("origin_address: {}\tbig_endian: {}", origin_address.map(|value| format!("{:#x}", value)).unwrap_or("None".to_string()), big_endian);
 				let usize_variable_as_bytes:[u8; 2] = if big_endian { u16_variable.mdt_to_be_bytes() } else { u16_variable.mdt_to_le_bytes() };
 				let float_variable_as_bytes:[u8; 4] = if big_endian { float_variable.mdt_to_be_bytes() } else { float_variable.mdt_to_le_bytes() };
-				let jump_len:i32 = (usize_variable_as_bytes.len() + float_variable_as_bytes.len()) as i32;
-				let jump_offset_bytes:[u8; 4] = if big_endian { jump_len.to_be_bytes() } else { jump_len.to_le_bytes() };
 				let machine_code:MachineCode<u32> = MachineCode::<u32>::variable(u16_variable) + MachineCode::<u32>::variable(float_variable);
 				assert_eq!(
 					machine_code.estimated_byte_count(),
-					11..11
+					6..6
 				);
 				assert_eq!(
 					machine_code.to_bytes(origin_address, big_endian),
 					vec![
-						0xE9,
-						jump_offset_bytes[0], jump_offset_bytes[1], jump_offset_bytes[2], jump_offset_bytes[3],
 						usize_variable_as_bytes[0], usize_variable_as_bytes[1],
 						float_variable_as_bytes[0], float_variable_as_bytes[1], float_variable_as_bytes[2], float_variable_as_bytes[3]
 					]

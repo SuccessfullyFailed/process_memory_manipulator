@@ -26,7 +26,7 @@ impl<AddressType:AddressSourceType> MachineCode<AddressType> {
 		MachineCode::RawBytes(vec![0x90; bytes_count])
 	}
 
-	/// Create a space for a variable and jump over it.
+	/// Create a space for a variable. Does not automatically jump over it.
 	pub fn variable<ValueType:MemoryDataType>(value:ValueType) -> MachineCode<AddressType> {
 		MachineCode::Variables(vec![value.mdt_to_le_bytes_vec()])
 	}
@@ -72,8 +72,7 @@ impl<AddressType:AddressSourceType> MachineCode<AddressType> {
 				if big_endian {
 					bytes_per_variable.iter_mut().for_each(|bytes| bytes.reverse());
 				}
-				let value_bytes:Vec<u8> = bytes_per_variable.into_iter().flatten().collect();
-				combine(MachineCode::JmpOffset(value_bytes.len() as i32).to_bytes(instruction_address, big_endian), value_bytes)
+				bytes_per_variable.into_iter().flatten().collect()
 			},
 
 			MachineCode::JmpTo(target_address) => {
@@ -124,7 +123,6 @@ impl<AddressType:AddressSourceType> MachineCode<AddressType> {
 
 	/// Get the estimated length of the amount of bytes when converting. As size can depend on multiple factors, this will return a minimum and maximum amount.
 	pub fn estimated_byte_count(&self) -> Range<usize> {
-		const RELATIVE_JMP_SIZE:usize = 5;
 		match self {
 			MachineCode::RawBytes(bytes) => {
 				let byte_count:usize = bytes.len();
@@ -132,12 +130,12 @@ impl<AddressType:AddressSourceType> MachineCode<AddressType> {
 			},
 
 			MachineCode::Variables(bytes_per_variable) => {
-				let byte_count:usize = bytes_per_variable.iter().map(|variable| variable.len()).sum::<usize>() + RELATIVE_JMP_SIZE;
-				byte_count..byte_count
+				let flat_size:usize = bytes_per_variable.iter().map(|variable| variable.len()).sum::<usize>();
+				flat_size..flat_size
 			},
 
 			MachineCode::JmpOffset(_offset) => {
-				RELATIVE_JMP_SIZE..RELATIVE_JMP_SIZE
+				5..5
 			},
 
 			MachineCode::JmpTo(target_address) => {
