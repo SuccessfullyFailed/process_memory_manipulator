@@ -8,7 +8,7 @@ const RELATIVE_JMP_SIZE:usize = 5;
 
 
 #[derive(Clone, PartialEq)]
-pub enum MachineCode<AddressType:AddressSourceType> {
+enum MachineCodeInner<AddressType:AddressSourceType> {
 	RawBytes(Vec<u8>),
 	Variables(Vec<Vec<u8>>),
 	JmpOffset(i32),
@@ -17,38 +17,40 @@ pub enum MachineCode<AddressType:AddressSourceType> {
 	Combined(Vec<MachineCode<AddressType>>),
 	Repeat((Box<MachineCode<AddressType>>, usize))
 }
+#[derive(Clone, PartialEq)]
+pub struct MachineCode<AddressType:AddressSourceType>(MachineCodeInner<AddressType>);
 impl<AddressType:AddressSourceType> MachineCode<AddressType> {
 
 	/* CONSTRUCTOR METHODS */
 
 	/// Create a list of raw bytes.
 	pub fn raw_bytes(bytes:Vec<u8>) -> MachineCode<AddressType> {
-		MachineCode::RawBytes(bytes)
+		MachineCode(MachineCodeInner::RawBytes(bytes))
 	}
 
 	/// Create a list of bytes that do nothing for the given byte-count.
 	pub fn do_nothing(bytes_count:usize) -> MachineCode<AddressType> {
-		MachineCode::RawBytes(vec![0x90; bytes_count])
+		MachineCode(MachineCodeInner::RawBytes(vec![0x90; bytes_count]))
 	}
 
 	/// Create a space for a variable. Does not automatically jump over it.
 	pub fn variable<ValueType:MemoryDataType>(value:ValueType) -> MachineCode<AddressType> {
-		MachineCode::Variables(vec![value.mdt_to_le_bytes_vec()])
+		MachineCode(MachineCodeInner::Variables(vec![value.mdt_to_le_bytes_vec()]))
 	}
 
 	/// Jump a relative offset. The offset is the amount of bytes to skip after this command, so starting from the byte after the jump command has completed.
 	pub fn jmp_offset(offset:i32) -> MachineCode<AddressType> {
-		MachineCode::JmpOffset(offset)
+		MachineCode(MachineCodeInner::JmpOffset(offset))
 	}
 
 	/// Jump over and write the given bytes.
 	pub fn jmp_over(inner:MachineCode<AddressType>) -> MachineCode<AddressType> {
-		MachineCode::JmpOver(Box::new(inner))
+		MachineCode(MachineCodeInner::JmpOver(Box::new(inner)))
 	}
 
 	/// Jump to an absolute position.
 	pub fn jmp_to(address:AddressType) -> MachineCode<AddressType> {
-		MachineCode::JmpTo(address)
+		MachineCode(MachineCodeInner::JmpTo(address))
 	}
 
 
@@ -69,37 +71,37 @@ impl<AddressType:AddressSourceType> MachineCode<AddressType> {
 	pub fn to_bytes(self, instruction_address:Option<AddressType>, big_endian:bool) -> Vec<u8> {
 		let address_to_bytes:fn(AddressType) -> Vec<u8> = if big_endian { MemoryDataType::mdt_to_be_bytes_vec } else { MemoryDataType::mdt_to_le_bytes_vec };
 		let combine:fn(Vec<u8>, Vec<u8>) -> Vec<u8> = |left:Vec<u8>, right:Vec<u8>| vec![left, right].into_iter().flatten().collect();
-		match self {
-			MachineCode::RawBytes(bytes) => {
+		match self.0 {
+			MachineCodeInner::RawBytes(bytes) => {
 				bytes
 			},
 
-			MachineCode::JmpOffset(offset) => {
+			MachineCodeInner::JmpOffset(offset) => {
 				combine(vec![0xE9], if big_endian { offset.mdt_to_be_bytes_vec() } else { offset.mdt_to_le_bytes_vec() })
 			},
 
-			MachineCode::JmpOver(inner) => {
+			MachineCodeInner::JmpOver(inner) => {
 				let inner_bytes:Vec<u8> = inner.to_bytes(instruction_address.map(|address| address + AddressType::from_usize(RELATIVE_JMP_SIZE)), big_endian);
 				combine(MachineCode::jmp_offset(inner_bytes.len() as i32).to_bytes(instruction_address, big_endian), inner_bytes)
 			},
 
-			MachineCode::Variables(mut bytes_per_variable) => {
+			MachineCodeInner::Variables(mut bytes_per_variable) => {
 				if big_endian {
 					bytes_per_variable.iter_mut().for_each(|bytes| bytes.reverse());
 				}
 				bytes_per_variable.into_iter().flatten().collect()
 			},
 
-			MachineCode::JmpTo(target_address) => {
+			MachineCodeInner::JmpTo(target_address) => {
 				const JUMP_BYTE:u8 = 0xFF;
 				const QWORD_BYTE:u8 = 0x25;
 				match instruction_address {
 					Some(start_address) => {
 						let jmp_offset_abs:AddressType = if target_address > start_address { target_address - start_address } else { start_address - target_address };
 						if jmp_offset_abs < AddressType::max_relative_jmp_offset() {
-							MachineCode::JmpOffset(target_address.to_i32() - start_address.to_i32() - RELATIVE_JMP_SIZE as i32).to_bytes(Some(start_address), big_endian)
+							MachineCode::jmp_offset(target_address.to_i32() - start_address.to_i32() - RELATIVE_JMP_SIZE as i32).to_bytes(Some(start_address), big_endian)
 						} else {
-							MachineCode::JmpTo(target_address).to_bytes(None, big_endian)
+							MachineCode::jmp_to(target_address).to_bytes(None, big_endian)
 						}
 					},
 					None => {
@@ -112,7 +114,7 @@ impl<AddressType:AddressSourceType> MachineCode<AddressType> {
 				}
 			},
 
-			MachineCode::Combined(machine_codes) => {
+			MachineCodeInner::Combined(machine_codes) => {
 				let mut start_address:Option<AddressType> = instruction_address;
 				let mut output_bytes:Vec<u8> = Vec::new();
 				for machine_code in machine_codes {
@@ -123,7 +125,7 @@ impl<AddressType:AddressSourceType> MachineCode<AddressType> {
 				output_bytes
 			},
 
-			MachineCode::Repeat((machine_code, repeat_count)) => {
+			MachineCodeInner::Repeat((machine_code, repeat_count)) => {
 				let mut start_address:Option<AddressType> = instruction_address;
 				let mut output_bytes:Vec<u8> = Vec::new();
 				for _ in 0..repeat_count {
@@ -138,27 +140,27 @@ impl<AddressType:AddressSourceType> MachineCode<AddressType> {
 
 	/// Get the estimated length of the amount of bytes when converting. As size can depend on multiple factors, this will return a minimum and maximum amount.
 	pub fn estimated_byte_count(&self) -> Range<usize> {
-		match self {
-			MachineCode::RawBytes(bytes) => {
+		match &self.0 {
+			MachineCodeInner::RawBytes(bytes) => {
 				let byte_count:usize = bytes.len();
 				byte_count..byte_count
 			},
 
-			MachineCode::Variables(bytes_per_variable) => {
+			MachineCodeInner::Variables(bytes_per_variable) => {
 				let flat_size:usize = bytes_per_variable.iter().map(|variable| variable.len()).sum::<usize>();
 				flat_size..flat_size
 			},
 
-			MachineCode::JmpOffset(_offset) => {
+			MachineCodeInner::JmpOffset(_offset) => {
 				RELATIVE_JMP_SIZE..RELATIVE_JMP_SIZE
 			},
 
-			MachineCode::JmpOver(inner) => {
+			MachineCodeInner::JmpOver(inner) => {
 				let inner_range:Range<usize> = inner.estimated_byte_count();
 				inner_range.start + RELATIVE_JMP_SIZE..inner_range.end + RELATIVE_JMP_SIZE
 			},
 
-			MachineCode::JmpTo(target_address) => {
+			MachineCodeInner::JmpTo(target_address) => {
 				let max:usize = {
 					if target_address.mdt_to_le_bytes_vec().len() == 4 {
 						6
@@ -169,7 +171,7 @@ impl<AddressType:AddressSourceType> MachineCode<AddressType> {
 				RELATIVE_JMP_SIZE..max
 			},
 
-			MachineCode::Combined(machine_codes) => {
+			MachineCodeInner::Combined(machine_codes) => {
 				let mut min:usize = 0;
 				let mut max:usize = 0;
 				for machine_code in machine_codes {
@@ -180,9 +182,9 @@ impl<AddressType:AddressSourceType> MachineCode<AddressType> {
 				min..max
 			},
 
-			MachineCode::Repeat((machine_code, repeat_count)) => {
+			MachineCodeInner::Repeat((machine_code, repeat_count)) => {
 				let raw_range = machine_code.estimated_byte_count();
-				raw_range.start * *repeat_count..raw_range.end * *repeat_count
+				raw_range.start * repeat_count..raw_range.end * repeat_count
 			}
 		}
 	}
@@ -191,30 +193,30 @@ impl<AddressType:AddressSourceType> Add<MachineCode<AddressType>> for MachineCod
 	type Output = MachineCode<AddressType>;
 
 	fn add(mut self, rhs:MachineCode<AddressType>) -> Self::Output {
-		if let MachineCode::Combined(list) = &mut self {
+		if let MachineCodeInner::Combined(list) = &mut self.0 {
 			list.push(rhs);
 			return self;
 		}
-		if let MachineCode::Variables(variables) = &mut self {
-			if let MachineCode::Variables(additional_variables) = rhs {
+		if let MachineCodeInner::Variables(variables) = &mut self.0 {
+			if let MachineCodeInner::Variables(additional_variables) = rhs.0 {
 				variables.extend(additional_variables);
 				return self;
 			}
 		}
-		MachineCode::Combined(vec![self, rhs])
+		MachineCode(MachineCodeInner::Combined(vec![self, rhs]))
 	}
 }
 impl<AddressType:AddressSourceType> Add<Vec<u8>> for MachineCode<AddressType> {
 	type Output = MachineCode<AddressType>;
 
 	fn add(self, rhs:Vec<u8>) -> Self::Output {
-		self + MachineCode::RawBytes(rhs)
+		self + MachineCode::raw_bytes(rhs)
 	}
 }
 impl<AddressType:AddressSourceType> Mul<usize> for MachineCode<AddressType> {
 	type Output = MachineCode<AddressType>;
 
 	fn mul(self, rhs:usize) -> Self::Output {
-		MachineCode::Repeat((Box::new(self), rhs))
+		MachineCode(MachineCodeInner::Repeat((Box::new(self), rhs)))
 	}
 }

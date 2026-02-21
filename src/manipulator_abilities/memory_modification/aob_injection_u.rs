@@ -19,7 +19,7 @@ mod tests {
 		];
 
 		// Create and enable injection.
-		let mut injection:AOBInjection<u64> = AOBInjection::new("01 53 12 44 8b 4b 12", move |_| MachineCode::RawBytes(replacement_instructions.to_vec())).unwrap();
+		let mut injection:AOBInjection<u64> = AOBInjection::new("01 53 12 44 8b 4b 12", move |_| MachineCode::raw_bytes(replacement_instructions.to_vec())).unwrap();
 		injection.enable(&mut pmm).unwrap();
 
 		// Validate replacement.
@@ -42,7 +42,7 @@ mod tests {
 		];
 
 		// Create and enable injection.
-		let mut injection:AOBInjection<u64> = AOBInjection::new("01 53 13 44 8b 4b 13", move |_| MachineCode::RawBytes(replacement_instructions.to_vec())).unwrap();
+		let mut injection:AOBInjection<u64> = AOBInjection::new("01 53 13 44 8b 4b 13", move |_| MachineCode::raw_bytes(replacement_instructions.to_vec())).unwrap();
 		injection.enable(&mut pmm).unwrap();
 
 		// Validate replacement.
@@ -61,7 +61,7 @@ mod tests {
 		];
 
 		// Create and enable injection.
-		let mut injection:AOBInjection<u64> = AOBInjection::new("01 53 14 44 8b 4b 14", |_| MachineCode::RawBytes(Vec::new())).unwrap();
+		let mut injection:AOBInjection<u64> = AOBInjection::new("01 53 14 44 8b 4b 14", |_| MachineCode::raw_bytes(Vec::new())).unwrap();
 		injection.enable(&mut pmm).unwrap();
 
 		// Validate replacement.
@@ -109,7 +109,7 @@ mod tests {
 		let random_instructions_address:u64 = &random_instructions[0] as *const u8 as u64;
 
 		// Create and enable injection.
-		let mut injection:AOBInjection<u64> = AOBInjection::new("01 53 15 44 8B 4B 15 44 8B 4B 15", move |_| MachineCode::RawBytes(replacement_instructions.to_vec())).unwrap();
+		let mut injection:AOBInjection<u64> = AOBInjection::new("01 53 15 44 8B 4B 15 44 8B 4B 15", move |_| MachineCode::raw_bytes(replacement_instructions.to_vec())).unwrap();
 		injection.enable(&mut pmm).unwrap();
 
 		// Validate that an external piece of code was created and the jump to it is accurate.
@@ -151,7 +151,7 @@ mod tests {
 		let random_instructions_address:u64 = &random_instructions[0] as *const u8 as u64;
 
 		// Create and enable injection.
-		let mut injection:AOBInjection<u64> = AOBInjection::new("01 53 16 44 8B 4B 16 44 8B 4B 16", move |original_bytes| MachineCode::RawBytes(original_bytes) + MachineCode::RawBytes(additional_instructions.to_vec())).unwrap();
+		let mut injection:AOBInjection<u64> = AOBInjection::new("01 53 16 44 8B 4B 16 44 8B 4B 16", move |original_bytes| MachineCode::raw_bytes(original_bytes) + additional_instructions.to_vec()).unwrap();
 		injection.enable(&mut pmm).unwrap();
 
 		// Validate that an external piece of code was created and the jump to it is accurate.

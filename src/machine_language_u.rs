@@ -249,7 +249,7 @@ mod tests {
 			for big_endian in [false, true] {
 				let offset_as_bytes:[u8; 4] = if big_endian { jmp_offset.to_be_bytes() } else { jmp_offset.to_le_bytes() };
 				println!("origin_address: {}\tbig_endian: {}", origin_address.map(|value| format!("{:#x}", value)).unwrap_or("None".to_string()), big_endian);
-				let machine_code:MachineCode<u32> = MachineCode::<u32>::jmp_over(MachineCode::RawBytes(random_contents.clone()));
+				let machine_code:MachineCode<u32> = MachineCode::<u32>::jmp_over(MachineCode::raw_bytes(random_contents.clone()));
 				assert_eq!(
 					machine_code.estimated_byte_count(),
 					random_contents.len() + 5..random_contents.len() + 5
@@ -272,7 +272,7 @@ mod tests {
 			for big_endian in [false, true] {
 				let offset_as_bytes:[u8; 4] = if big_endian { jmp_offset.to_be_bytes() } else { jmp_offset.to_le_bytes() };
 				println!("origin_address: {}\tbig_endian: {}", origin_address.map(|value| format!("{:#x}", value)).unwrap_or("None".to_string()), big_endian);
-				let machine_code:MachineCode<u64> = MachineCode::<u64>::jmp_over(MachineCode::RawBytes(random_contents.clone()));
+				let machine_code:MachineCode<u64> = MachineCode::<u64>::jmp_over(MachineCode::raw_bytes(random_contents.clone()));
 				assert_eq!(
 					machine_code.estimated_byte_count(),
 					random_contents.len() + 5..random_contents.len() + 5
