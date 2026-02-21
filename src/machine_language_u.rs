@@ -242,6 +242,54 @@ mod tests {
 
 	
 	#[test]
+	fn test_jmp_over_u32() {
+		let random_contents:Vec<u8> = (0..u8::random()).map(|_| u8::random()).collect();
+		let jmp_offset:i32 = random_contents.len() as i32;
+		for origin_address in [None, Some(10), Some(0xFF8844)] {
+			for big_endian in [false, true] {
+				let offset_as_bytes:[u8; 4] = if big_endian { jmp_offset.to_be_bytes() } else { jmp_offset.to_le_bytes() };
+				println!("origin_address: {}\tbig_endian: {}", origin_address.map(|value| format!("{:#x}", value)).unwrap_or("None".to_string()), big_endian);
+				let machine_code:MachineCode<u32> = MachineCode::<u32>::jmp_over(MachineCode::RawBytes(random_contents.clone()));
+				assert_eq!(
+					machine_code.estimated_byte_count(),
+					random_contents.len() + 5..random_contents.len() + 5
+				);
+				assert_eq!(
+					machine_code.to_bytes(origin_address, big_endian),
+					[
+						vec![0xE9, offset_as_bytes[0], offset_as_bytes[1], offset_as_bytes[2], offset_as_bytes[3]],
+						random_contents.clone()
+					].into_iter().flatten().collect::<Vec<u8>>()
+				);
+			}
+		}
+	}
+	#[test]
+	fn test_jmp_over_u64() {
+		let random_contents:Vec<u8> = (0..u8::random()).map(|_| u8::random()).collect();
+		let jmp_offset:i32 = random_contents.len() as i32;
+		for origin_address in [None, Some(10), Some(0xFF8844)] {
+			for big_endian in [false, true] {
+				let offset_as_bytes:[u8; 4] = if big_endian { jmp_offset.to_be_bytes() } else { jmp_offset.to_le_bytes() };
+				println!("origin_address: {}\tbig_endian: {}", origin_address.map(|value| format!("{:#x}", value)).unwrap_or("None".to_string()), big_endian);
+				let machine_code:MachineCode<u64> = MachineCode::<u64>::jmp_over(MachineCode::RawBytes(random_contents.clone()));
+				assert_eq!(
+					machine_code.estimated_byte_count(),
+					random_contents.len() + 5..random_contents.len() + 5
+				);
+				assert_eq!(
+					machine_code.to_bytes(origin_address, big_endian),
+					[
+						vec![0xE9, offset_as_bytes[0], offset_as_bytes[1], offset_as_bytes[2], offset_as_bytes[3]],
+						random_contents.clone()
+					].into_iter().flatten().collect::<Vec<u8>>()
+				);
+			}
+		}
+	}
+
+	
+	#[test]
 	fn test_jmp_to_u32() {
 		let target_address:u32 = 0xFF00;
 		let source_address:u32 = 0xF000;

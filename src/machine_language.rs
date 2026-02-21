@@ -3,11 +3,16 @@ use std::ops::{ Add, Mul, Range };
 
 
 
+const RELATIVE_JMP_SIZE:usize = 5;
+
+
+
 #[derive(Clone, PartialEq)]
 pub enum MachineCode<AddressType:AddressSourceType> {
 	RawBytes(Vec<u8>),
 	Variables(Vec<Vec<u8>>),
 	JmpOffset(i32),
+	JmpOver(Box<MachineCode<AddressType>>),
 	JmpTo(AddressType),
 	Combined(Vec<MachineCode<AddressType>>),
 	Repeat((Box<MachineCode<AddressType>>, usize))
@@ -34,6 +39,11 @@ impl<AddressType:AddressSourceType> MachineCode<AddressType> {
 	/// Jump a relative offset. The offset is the amount of bytes to skip after this command, so starting from the byte after the jump command has completed.
 	pub fn jmp_offset(offset:i32) -> MachineCode<AddressType> {
 		MachineCode::JmpOffset(offset)
+	}
+
+	/// Jump over and write the given bytes.
+	pub fn jmp_over(inner:MachineCode<AddressType>) -> MachineCode<AddressType> {
+		MachineCode::JmpOver(Box::new(inner))
 	}
 
 	/// Jump to an absolute position.
@@ -68,6 +78,11 @@ impl<AddressType:AddressSourceType> MachineCode<AddressType> {
 				combine(vec![0xE9], if big_endian { offset.mdt_to_be_bytes_vec() } else { offset.mdt_to_le_bytes_vec() })
 			},
 
+			MachineCode::JmpOver(inner) => {
+				let inner_bytes:Vec<u8> = inner.to_bytes(instruction_address.map(|address| address + AddressType::from_usize(RELATIVE_JMP_SIZE)), big_endian);
+				combine(MachineCode::jmp_offset(inner_bytes.len() as i32).to_bytes(instruction_address, big_endian), inner_bytes)
+			},
+
 			MachineCode::Variables(mut bytes_per_variable) => {
 				if big_endian {
 					bytes_per_variable.iter_mut().for_each(|bytes| bytes.reverse());
@@ -82,7 +97,7 @@ impl<AddressType:AddressSourceType> MachineCode<AddressType> {
 					Some(start_address) => {
 						let jmp_offset_abs:AddressType = if target_address > start_address { target_address - start_address } else { start_address - target_address };
 						if jmp_offset_abs < AddressType::max_relative_jmp_offset() {
-							MachineCode::JmpOffset(target_address.to_i32() - start_address.to_i32() - 5).to_bytes(Some(start_address), big_endian)
+							MachineCode::JmpOffset(target_address.to_i32() - start_address.to_i32() - RELATIVE_JMP_SIZE as i32).to_bytes(Some(start_address), big_endian)
 						} else {
 							MachineCode::JmpTo(target_address).to_bytes(None, big_endian)
 						}
@@ -135,7 +150,12 @@ impl<AddressType:AddressSourceType> MachineCode<AddressType> {
 			},
 
 			MachineCode::JmpOffset(_offset) => {
-				5..5
+				RELATIVE_JMP_SIZE..RELATIVE_JMP_SIZE
+			},
+
+			MachineCode::JmpOver(inner) => {
+				let inner_range:Range<usize> = inner.estimated_byte_count();
+				inner_range.start + RELATIVE_JMP_SIZE..inner_range.end + RELATIVE_JMP_SIZE
 			},
 
 			MachineCode::JmpTo(target_address) => {
@@ -146,7 +166,7 @@ impl<AddressType:AddressSourceType> MachineCode<AddressType> {
 						14
 					}
 				};
-				5..max
+				RELATIVE_JMP_SIZE..max
 			},
 
 			MachineCode::Combined(machine_codes) => {
