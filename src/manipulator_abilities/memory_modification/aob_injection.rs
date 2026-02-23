@@ -8,7 +8,7 @@ pub struct AOBInjection<AddressType:AddressSourceType> {
 	replacement:Box<dyn Fn(Vec<u8>) -> MachineCode<AddressType>>,
 	original_bytes:Option<Vec<u8>>,
 	injection_address:Option<AddressType>,
-	reroute_injection_address:Option<AddressType>
+	new_code_address:Option<AddressType>
 }
 impl<AddressType:AddressSourceType + 'static> AOBInjection<AddressType> {
 
@@ -21,7 +21,7 @@ impl<AddressType:AddressSourceType + 'static> AOBInjection<AddressType> {
 			replacement: Box::new(replacement),
 			original_bytes: None,
 			injection_address: None,
-			reroute_injection_address: None
+			new_code_address: None
 		})
 	}
 
@@ -72,13 +72,13 @@ impl<AddressType:AddressSourceType + 'static> AOBInjection<AddressType> {
 					let reroute_function:MachineCode<AddressType> = replacement_bytes.clone() + MachineCode::jmp_to(end_of_injection_address);
 
 					// Find or get reroute address.
-					let rerouting_address:AddressType = match self.reroute_injection_address.clone() {
+					let rerouting_address:AddressType = match self.new_code_address.clone() {
 						Some(existing_rerouting_address) => existing_rerouting_address,
 						None => {
 							let required_memory:AddressType = AddressType::from_usize(reroute_function.estimated_byte_count().end);
 							let reroute_address:AddressType = pmm.allocate_memory_try_near(required_memory, injection_address, AddressType::max_relative_jmp_offset())?;
 							pmm.write_bytes(reroute_address, &reroute_function.to_bytes(Some(reroute_address), big_endian))?;
-							self.reroute_injection_address = Some(reroute_address.clone());
+							self.new_code_address = Some(reroute_address.clone());
 							reroute_address
 						}
 					};
@@ -123,5 +123,24 @@ impl<AddressType:AddressSourceType + 'static> AOBInjection<AddressType> {
 			// Was not injected yet, return success.
 			None => Ok(())
 		}
+	}
+
+
+
+	/* PROPERTY GETTER METHODS */
+
+	/// Whether or not the injection is enabled or not.
+	pub fn is_enabled(&self) -> bool {
+		self.injection_address.is_some()
+	}
+
+	/// If the injection is enabled, this will return the address found using the search pattern.
+	pub fn injection_address(&self) -> Option<AddressType> {
+		self.injection_address
+	}
+
+	/// If the injection is enabled, this will return the address where the new code is stored. Can be same as the injection address, but the injection could be a reroute to another address where the code is stored.
+	pub fn new_code_address(&self) -> Option<AddressType> {
+		self.new_code_address
 	}
 }
