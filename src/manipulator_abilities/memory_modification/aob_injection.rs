@@ -5,7 +5,7 @@ use std::{ error::Error, ops::Range };
 
 pub struct AOBInjection<AddressType:AddressSourceType> {
 	search_pattern:RawAobPattern,
-	replacement:Box<dyn Fn(Vec<u8>) -> MachineCode<AddressType>>,
+	replacement:Box<dyn Fn(Vec<u8>) -> MachineCode<AddressType> + Send + Sync + 'static>,
 	original_bytes:Option<Vec<u8>>,
 	injection_address:Option<AddressType>,
 	new_code_address:Option<AddressType>
@@ -15,7 +15,7 @@ impl<AddressType:AddressSourceType + 'static> AOBInjection<AddressType> {
 	/* CONSTRUCTION METHODS */
 
 	/// Create a new AOB injection.
-	pub fn new<AOBRef:AOBReference, ReplacementFn:Fn(Vec<u8>) -> MachineCode<AddressType> + 'static>(pattern:AOBRef, replacement:ReplacementFn) -> Result<AOBInjection<AddressType>, Box<dyn Error>> {
+	pub fn new<AOBRef:AOBReference, ReplacementFn:Fn(Vec<u8>) -> MachineCode<AddressType> + Send + Sync + 'static>(pattern:AOBRef, replacement:ReplacementFn) -> Result<AOBInjection<AddressType>, Box<dyn Error>> {
 		Ok(AOBInjection {
 			search_pattern: pattern.into_aob()?,
 			replacement: Box::new(replacement),
