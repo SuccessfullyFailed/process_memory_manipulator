@@ -65,7 +65,7 @@ impl<AddressType:AddressSourceType + 'static> AOBInjection<AddressType> {
 		match found_address {
 			Some((injection_address, found_bytes)) => {
 				self.cached_found_address = Some(injection_address);
-				let overwrite_length:usize = self.pattern_overwrite_length.unwrap_or(self.search_pattern.len());
+				let overwrite_length:usize = self.pattern_overwrite_length.unwrap_or(found_bytes.len());
 				let replacement_bytes:MachineCode<AddressType> = (self.replacement)(found_bytes[..overwrite_length].to_vec());
 				let replace_pattern_len:Range<usize> = replacement_bytes.estimated_byte_count();
 				self.original_bytes = Some(pmm.read_bytes(injection_address, overwrite_length)?);
