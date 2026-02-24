@@ -159,6 +159,9 @@ impl<AddressType:AddressSourceType + 'static> AOBInjection<AddressType> {
 
 	/// If the injection is enabled, this will return the address where the new code is stored. Can be same as the injection address, but the injection could be a reroute to another address where the code is stored.
 	pub fn new_code_address(&self) -> Option<AddressType> {
-		self.new_code_address
+		match self.new_code_address {
+			Some(address) => Some(address),
+			None => self.injection_address
+		}
 	}
 }
