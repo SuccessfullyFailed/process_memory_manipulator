@@ -109,7 +109,7 @@ mod tests {
 		let random_instructions_address:u64 = &random_instructions[0] as *const u8 as u64;
 
 		// Create and enable injection.
-		let mut injection:AOBInjection<u64> = AOBInjection::new("01 53 15 44 8B 4B 15 44 8B 4B 15", move |_| MachineCode::raw_bytes(replacement_instructions.to_vec())).unwrap();
+		let mut injection:AOBInjection<u64> = AOBInjection::new("01 53 15 44 8B 4B 15 44 8B 4B 15",  move |_| MachineCode::raw_bytes(replacement_instructions.to_vec())).unwrap();
 		injection.enable(&mut pmm).unwrap();
 
 		// Validate that an external piece of code was created and the jump to it is accurate.
@@ -168,5 +168,44 @@ mod tests {
 		let reroute_back_offset:i32 = i32::from_le_bytes(reroute_trail[1..].try_into().unwrap());
 		let reroute_back_target_address:u64 = ((reroute_trail_address + 5) as i64 + reroute_back_offset as i64) as u64;
 		assert_eq!(reroute_back_target_address, random_instructions_address + random_instructions.len() as u64);
+	}
+
+	#[test]
+	fn test_aob_injection_custom_replacement_length() {
+		let process_name:String = active_process_name();
+		let mut pmm:ProcessMemoryManipulator<u64> = ProcessMemoryManipulator64::new(&process_name, false);
+		
+		// Create random instructions.
+		let random_instructions:[u8; 11] = [
+			0x01, 0x53, 0x17, // add [rbx+17], edx
+			0x44, 0x8B, 0x4B, 0x17, // mov r9d, [rbx+17]
+			0x44, 0x8B, 0x4B, 0x17 // mov r9d, [rbx+17]
+		];
+		let replacement_instructions:[u8; 16] = [
+			0x44, 0x8B, 0x4B, 0x17, // mov r9d, [rbx+17]
+			0x44, 0x8B, 0x4B, 0x17, // mov r9d, [rbx+17]
+			0x44, 0x8B, 0x4B, 0x17, // mov r9d, [rbx+17]
+			0x44, 0x8B, 0x4B, 0x17 // mov r9d, [rbx+17]
+		];
+		let random_instructions_address:u64 = &random_instructions[0] as *const u8 as u64;
+
+		// Create and enable injection.
+		let mut injection:AOBInjection<u64> = AOBInjection::new("01 53 17 44 8B 4B 17 44 8B 4B 17",  move |_| MachineCode::raw_bytes(replacement_instructions.to_vec())).unwrap().with_overwrite_length(7);
+		injection.enable(&mut pmm).unwrap();
+
+		// Validate that an external piece of code was created and the jump to it is accurate.
+		assert_eq!(random_instructions[0], 0xE9);
+		let reroute_offset:i32 = i32::from_le_bytes(random_instructions[1..5].try_into().unwrap());
+		let reroute_start:u64 = (random_instructions_address as i64 + 5 + reroute_offset as i64) as u64;
+		assert!(reroute_start != random_instructions_address, "Reroute address is same as injection address.");
+		assert_eq!(pmm.read_bytes(reroute_start, replacement_instructions.len()).unwrap(), &replacement_instructions);
+
+		// Validate the jump back is accurate.
+		let reroute_trail_address:u64 = reroute_start + replacement_instructions.len() as u64;
+		let reroute_trail:Vec<u8> = pmm.read_bytes(reroute_trail_address, 5).unwrap();
+		assert_eq!(reroute_trail[0], 0xE9);
+		let reroute_back_offset:i32 = i32::from_le_bytes(reroute_trail[1..].try_into().unwrap());
+		let reroute_back_target_address:u64 = ((reroute_trail_address + 5) as i64 + reroute_back_offset as i64) as u64;
+		assert_eq!(reroute_back_target_address, random_instructions_address + 7 as u64);
 	}
 }
