@@ -1,5 +1,5 @@
 use crate::{ AOBReference, AddressSourceType, MachineCode, ProcessMemoryManipulator, RawAobPattern };
-use std::{ error::Error, ops::Range };
+use std::{ error::Error, ops::Range, sync::Mutex };
 
 
 
@@ -9,7 +9,8 @@ pub struct AOBInjection<AddressType:AddressSourceType> {
 	replacement:Box<dyn Fn(Vec<u8>) -> MachineCode<AddressType> + Send + Sync + 'static>,
 	original_bytes:Option<Vec<u8>>,
 	injection_address:Option<AddressType>,
-	new_code_address:Option<AddressType>
+	new_code_address:Option<AddressType>,
+	cached_found_address:Option<AddressType>
 }
 impl<AddressType:AddressSourceType + 'static> AOBInjection<AddressType> {
 
@@ -23,7 +24,8 @@ impl<AddressType:AddressSourceType + 'static> AOBInjection<AddressType> {
 			replacement: Box::new(replacement),
 			original_bytes: None,
 			injection_address: None,
-			new_code_address: None
+			new_code_address: None,
+			cached_found_address: None
 		})
 	}
 
@@ -45,9 +47,24 @@ impl<AddressType:AddressSourceType + 'static> AOBInjection<AddressType> {
 			return Ok(());
 		}
 
-		// Find AOB pattern in memory.
-		match pmm.scan_aob(self.search_pattern.clone())? {
+		// Find AOB pattern in cache or memory.
+		let mut found_address = None;
+		if let Some(cached_address) = &self.cached_found_address {
+			let scan_range:Range<AddressType> = *cached_address..*cached_address + AddressType::from_usize(self.search_pattern.len());
+			if let Ok(scan_results) = pmm.scan_aob_in_iterator(self.search_pattern.clone(), (Mutex::new(false), scan_range)) {
+				if let Some(scan_result) = scan_results {
+					found_address = Some(scan_result);
+				}
+			}
+		}
+		if found_address.is_none() {
+			found_address = pmm.scan_aob(self.search_pattern.clone())?;
+		}
+
+		// If address found, do the injection.
+		match found_address {
 			Some((injection_address, found_bytes)) => {
+				self.cached_found_address = Some(injection_address);
 				let overwrite_length:usize = self.pattern_overwrite_length.unwrap_or(self.search_pattern.len());
 				let replacement_bytes:MachineCode<AddressType> = (self.replacement)(found_bytes[..overwrite_length].to_vec());
 				let replace_pattern_len:Range<usize> = replacement_bytes.estimated_byte_count();

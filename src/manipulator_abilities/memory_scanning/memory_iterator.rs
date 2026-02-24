@@ -103,3 +103,19 @@ impl<AddressType:AddressSourceType> MemoryIterator<AddressType> for RegionIterat
 		Ok(result)
 	}
 }
+
+
+
+impl<AddressType:AddressSourceType> MemoryIterator<AddressType> for (Mutex<bool>, Range<AddressType>) {
+	
+	/// Get the next memory range to iterate over.
+	fn next_range(&self, _pmm:&mut ProcessMemoryManipulator<AddressType>) -> Result<Option<Range<AddressType>>, Box<dyn Error>> {
+		let mut lock_handle:MutexGuard<'_, bool> = self.0.lock().unwrap();
+		if !*lock_handle {
+			*lock_handle = true;
+			Ok(Some(self.1.clone()))
+		} else {
+			Ok(None)
+		}
+	}
+}

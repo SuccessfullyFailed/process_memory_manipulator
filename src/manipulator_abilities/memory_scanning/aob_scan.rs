@@ -104,15 +104,20 @@ impl<AddressType:AddressSourceType + 'static> ProcessMemoryManipulator<AddressTy
 
 	/// Scan for an address using an AOB pattern.
 	pub fn scan_aob<AOBRef:AOBReference>(&mut self, aob_reference:AOBRef) -> Result<Option<(AddressType, Vec<u8>)>, Box<dyn Error>> {
+		self.scan_aob_in_iterator(aob_reference, RegionIterator::new())
+	}
+
+	/// Scan for an address using an AOB pattern and a MemoryIterator.
+	pub fn scan_aob_in_iterator<AOBRef:AOBReference, MemoryIter:MemoryIterator<AddressType> + 'static>(&mut self, aob_reference:AOBRef, memory_iterator:MemoryIter) -> Result<Option<(AddressType, Vec<u8>)>, Box<dyn Error>> {
 		let raw_aob:RawAobPattern = aob_reference.into_aob()?;
 		match raw_aob {
-			RawAobPattern::Full(pattern) => self.scan_aob_with_snapshot_full_ref(pattern, RegionIterator::new()),
-			RawAobPattern::Partial(pattern) => self.scan_aob_with_snapshot_partial_ref(pattern, RegionIterator::new())
+			RawAobPattern::Full(pattern) => self.scan_aob_in_iterator_full_ref(pattern, memory_iterator),
+			RawAobPattern::Partial(pattern) => self.scan_aob_in_iterator_partial_ref(pattern, memory_iterator)
 		}
 	}
 
-	/// Scan for an address using an AOB pattern and a snapshot.
-	pub fn scan_aob_with_snapshot_full_ref<MemoryIter:MemoryIterator<AddressType> + 'static>(&mut self, aob_pattern:Vec<u8>, memory_iterator:MemoryIter) -> Result<Option<(AddressType, Vec<u8>)>, Box<dyn Error>> {
+	/// Scan for an address using an AOB pattern and a MemoryIterator.
+	fn scan_aob_in_iterator_full_ref<MemoryIter:MemoryIterator<AddressType> + 'static>(&mut self, aob_pattern:Vec<u8>, memory_iterator:MemoryIter) -> Result<Option<(AddressType, Vec<u8>)>, Box<dyn Error>> {
 
 		// Spawn threads.
 		let memory_iterator:Arc<MemoryIter> = Arc::new(memory_iterator);
@@ -181,8 +186,8 @@ impl<AddressType:AddressSourceType + 'static> ProcessMemoryManipulator<AddressTy
 		Ok(result)
 	}
 
-	/// Scan for an address using an AOB pattern and a snapshot.
-	pub fn scan_aob_with_snapshot_partial_ref<MemoryIter:MemoryIterator<AddressType> + 'static>(&mut self, aob_pattern:Vec<Option<u8>>, memory_iterator:MemoryIter) -> Result<Option<(AddressType, Vec<u8>)>, Box<dyn Error>> {
+	/// Scan for an address using an AOB pattern and a MemoryIterator.
+	fn scan_aob_in_iterator_partial_ref<MemoryIter:MemoryIterator<AddressType> + 'static>(&mut self, aob_pattern:Vec<Option<u8>>, memory_iterator:MemoryIter) -> Result<Option<(AddressType, Vec<u8>)>, Box<dyn Error>> {
 
 		// Find part of the aob pattern that can be fully matched.
 		let fully_matchable:Vec<u8> = aob_pattern.iter().take_while(|byte| byte.is_some()).map(|byte| byte.unwrap()).collect();
