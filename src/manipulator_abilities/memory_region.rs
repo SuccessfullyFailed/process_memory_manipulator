@@ -69,17 +69,35 @@ impl<AddressType:AddressSourceType> ProcessMemoryManipulator<AddressType> {
 
 	/// Allocate new memory of the given size near the given address.
 	pub fn allocate_memory_near(&mut self, size:AddressType, target_address:AddressType, max_allowed_offset:AddressType) -> Result<AddressType, Box<dyn Error>> {
-		let min_address:AddressType = if target_address > max_allowed_offset { target_address - max_allowed_offset } else { AddressType::default() };
-		let max_address:AddressType = target_address + max_allowed_offset;
-		let mut address:AddressType = min_address;
-		while let Ok(region) = self.memory_region_at(address) {
-			if region.base_address >= min_address && region.state == MEM_FREE {
-				if let Ok(allocated_address) = self.allocate_memory_at(size, region.base_address) {
+		let size_64kb:AddressType = AddressType::from_usize(64 * 1024);
+		let cursor_start:AddressType = (target_address / size_64kb + AddressType::from_usize(1)) * size_64kb;
+
+		// Try forwards.
+		let mut cursor:AddressType = cursor_start;
+		let address_max:AddressType = (target_address + max_allowed_offset) / size_64kb * size_64kb;
+		while let Ok(region) = self.memory_region_at(cursor) {
+			if region.state == MEM_FREE && region.size >= size {
+				if let Ok(allocated_address) = self.allocate_memory_at(size, cursor) {
 					return Ok(allocated_address);
 				}
 			}
-			address += region.size;
-			if address > max_address {
+			cursor += size_64kb;
+			if cursor >= address_max {
+				break;
+			}
+		}
+
+		// Try backwards.
+		let mut cursor:AddressType = cursor_start;
+		let address_min:AddressType = ((if target_address > max_allowed_offset { target_address - max_allowed_offset } else { AddressType::default() }) / size_64kb + AddressType::from_usize(1)) * size_64kb;
+		while let Ok(region) = self.memory_region_at(cursor) {
+			if region.state == MEM_FREE && region.size >= size {
+				if let Ok(allocated_address) = self.allocate_memory_at(size, cursor) {
+					return Ok(allocated_address);
+				}
+			}
+			cursor -= size_64kb;
+			if cursor < address_min {
 				break;
 			}
 		}
@@ -91,7 +109,7 @@ impl<AddressType:AddressSourceType> ProcessMemoryManipulator<AddressType> {
 	pub fn allocate_memory_at(&mut self, size:AddressType, target_address:AddressType) -> Result<AddressType, Box<dyn Error>> where AddressType:PartialOrd {
 		const ALLOCATE_ACCESS:MemoryAccessToken = MemoryAccessToken::PROCESS_VM_OPERATION;
 
-		let remote_buffer:u64 = unsafe { VirtualAllocEx(self.win_handle(ALLOCATE_ACCESS)?, target_address.to_c_void_ptr_mut(), size.to_usize(), MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE) as u64 };
+		let remote_buffer:u64 = unsafe { VirtualAllocEx(self.win_handle(ALLOCATE_ACCESS)?, target_address.to_c_void_ptr_mut(), size.to_usize(), MEM_RESERVE | MEM_COMMIT, PAGE_EXECUTE_READWRITE) as u64 };
 		if remote_buffer == 0 {
 		  	Err(format!("Failed to allocate memory in the remote process. Error code: '{}'.", unsafe { GetLastError() }).into())
 		} else {

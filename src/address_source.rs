@@ -1,10 +1,10 @@
-use std::{ fmt::{ Debug, Display, LowerHex }, ops::{ Add, AddAssign, Sub, SubAssign } };
+use std::{ fmt::{ Debug, Display, LowerHex }, ops::{ Add, AddAssign, Div, Mul, Rem, Sub, SubAssign } };
 use winapi::ctypes::c_void;
 use crate::MemoryDataType;
 
 
 
-pub trait AddressSourceType:Send + Sync + Debug + Display + Default + LowerHex + Copy + PartialEq + PartialOrd + Add<Output=Self> + AddAssign + Sub<Output=Self> + SubAssign + MemoryDataType {
+pub trait AddressSourceType:Send + Sync + Debug + Display + Default + LowerHex + Copy + PartialEq + PartialOrd + Add<Output=Self> + AddAssign + Sub<Output=Self> + SubAssign + Mul<Output=Self> + Div<Output=Self> + Rem<Output=Self> + MemoryDataType {
 	fn to_usize(&self) -> usize;
 	fn to_u64(&self) -> u64;
 	fn to_i32(&self) -> i32;
