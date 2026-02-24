@@ -125,6 +125,16 @@ impl<AddressType:AddressSourceType + 'static> AOBInjection<AddressType> {
 		}
 	}
 
+	/// Disable the injection and remove the newly created memory.
+	pub fn remove(&mut self, pmm:&mut ProcessMemoryManipulator<AddressType>) -> Result<(), Box<dyn Error>> {
+		if let Some(created_code_address) = self.new_code_address {
+			let original_bytes:Vec<u8> = self.original_bytes.clone().unwrap_or(Vec::new());
+			let code_size:usize = (self.replacement)(original_bytes).estimated_byte_count().end;
+			pmm.write_bytes(created_code_address, &vec![0x00; code_size])?;
+		}
+		self.disable(pmm)
+	}
+
 
 
 	/* PROPERTY GETTER METHODS */
